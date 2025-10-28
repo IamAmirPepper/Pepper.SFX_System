@@ -11,5 +11,5 @@ A simple, modular sound effects system for Unity.
 6. To do so:
 7. Tools -> SFX System -> Install to Assets.
 8. Alternatively, download them from: `https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~`
-   Alternatively, download them from: `https://github.com/IamAmirPepper/Pepper.SFX_System/releases`
+9. Or download them from: `https://github.com/IamAmirPepper/Pepper.SFX_System/releases`
       
