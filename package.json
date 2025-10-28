@@ -1,0 +1,12 @@
+{
+  "name": "com.pepper.sfx",
+  "displayName": "Pepper's SFX System",
+  "version": "1.0.0",
+  "unity": "6000.0",
+  "description": "Modular sound effects system for Unity.",
+  "author": {
+    "name": "Amir",
+    "email": "amirpepper96@gmail.com"
+  },
+  "keywords": ["audio", "sfx","sound"]
+}
