@@ -10,5 +10,6 @@ A simple, modular sound effects system for Unity.
 5. **Optional It is possible to add the DLLs to the Assets folder, there you will be able to find A guide and manual**
 6. To do so:
 7.   Tools -> SFX System -> Install to Assets
-     Alternatively, download them from: `https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~` 
+     Alternatively, download them from: `https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~`
+     Alternatively, download them from: `https://github.com/IamAmirPepper/Pepper.SFX_System/releases`
       
