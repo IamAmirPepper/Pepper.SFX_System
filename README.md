@@ -1,4 +1,4 @@
-# YourCompany SFX System
+# SFX System
 
 A simple, modular sound effects system for Unity.
 
