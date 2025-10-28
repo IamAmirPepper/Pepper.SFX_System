@@ -10,5 +10,7 @@
   },
 
   "documentationUrl": "https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~",
+  "documentationUrl2": "https://github.com/IamAmirPepper/Pepper.SFX_System/releases",
+
   "keywords": ["audio", "sfx","sound"]
 }
