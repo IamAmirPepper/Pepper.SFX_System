@@ -8,5 +8,7 @@
     "name": "Amir",
     "email": "amirpepper96@gmail.com"
   },
+
+  "documentationUrl": "https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~",
   "keywords": ["audio", "sfx","sound"]
 }
