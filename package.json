@@ -1,7 +1,7 @@
 {
   "name": "com.pepper.sfx",
   "displayName": "Pepper's SFX System",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "unity": "6000.0",
   "description": "Modular sound effects system for Unity.",
   "author": {
