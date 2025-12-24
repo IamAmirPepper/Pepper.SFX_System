@@ -1,4 +1,6 @@
 # Changelog
 Added MultiPositionMode
-## [1.1.0] - 2025-10-26
-- Initial release of the SFX system.
+## [1.2.0] - 2025-12-24
+- Refactored Code Encapsulation
+- Re-Wrote Guides and Manuals
+###
