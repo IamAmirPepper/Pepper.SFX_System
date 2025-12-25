@@ -191,20 +191,20 @@ Right-click in your Project window and create this folder structure:
 
 ```
 Assets/
-└── Audio/
-    ├── Resources/
-    │   └── Audio/
-    │       ├── Events/     ← AudioEvents MUST go here
-    │       └── States/     ← AudioStates MUST go here
-    ├── Containers/         ← Container assets
-    ├── Buses/              ← Bus assets
-    └── AudioClips/         ← Your .wav/.mp3 files
+├── Resources/
+│   └── Audio/
+│       ├── Events/     ← AudioEvents MUST go here
+│       └── States/     ← AudioStates MUST go here
+└── Audio/              ← Optional organizational folder
+    ├── Containers/     ← Container assets
+    ├── Buses/          ← Bus assets
+    └── AudioClips/     ← Your .wav/.mp3 files
         ├── SFX/
         ├── Music/
         └── Ambience/
 ```
 
-**Why Resources folder?** AudioManager auto-loads Events and States from `Resources/Audio/Events` and `Resources/Audio/States` at startup.
+**Why Resources folder?** AudioManager auto-loads Events and States from `Resources/Audio/Events` and `Resources/Audio/States` at startup. Unity requires the `Resources` folder to be at the root level under `Assets/`.
 
 ---
 
@@ -217,7 +217,9 @@ Assets/
    - **Bus Name:** "SFX"
    - **Volume Db:** 0
    - **Parent Bus:** (leave empty for now)
-   - **Mixer Group:** (optional - assign if using Unity's AudioMixer)
+   - **Mixer Group:** (leave empty for now)
+
+**About Mixer Group:** This is **optional**. The system works without it for basic volume control. Assign a Unity AudioMixer Group only if you need advanced effects like reverb, compression, or AudioMixer snapshots.
 
 **What just happened?** You created a volume control group for sound effects. Later you can adjust all SFX together.
 
@@ -246,7 +248,7 @@ Assets/
 
 ### Step 5: Create Your First Event (2 minutes)
 
-1. Right-click in `Assets/Audio/Resources/Audio/Events/`
+1. Right-click in `Assets/Resources/Audio/Events/`
 2. Select `Create > Audio System > Audio Event`
 3. Name it: "Play_TestSound"
 4. Select it and configure in the Inspector:
@@ -334,10 +336,12 @@ Make your sound more interesting:
 3. Change container type to `Random Container`:
    - Right-click container → Create → Audio System → **Random Container**
    - Set **Avoid Repeat Last:** 2
-   - Set **Use Weighting:** ✓
+   - Set **Use Weighting:** ☐ (unchecked for now - enable only if you want some clips to play more often than others)
 4. Enable randomization:
    - **Volume Randomization:** -2 to +2 dB
    - **Pitch Randomization:** -100 to +100 cents
+
+**About Weighting:** When enabled, each audio clip has a "weight" value (like 1.0, 2.0, 0.5). Clips with higher weights play more frequently. For example, a clip with weight 2.0 is twice as likely to play as a clip with weight 1.0. Leave it disabled for equal probability.
 
 Now your sound will never repeat exactly the same way!
 
@@ -367,9 +371,12 @@ Now you can control music volume independently from SFX!
    - Pitch Randomization: ±100 cents
 
 2. **Create Event:**
-   - Priority: Medium
-   - Max Instances: 4
+   - **Priority:** Medium (how important this sound is when the system is busy - Critical > High > Medium > Low)
+   - **Max Instances:** 4 (limits to max 4 footstep sounds playing simultaneously - prevents overlapping spam)
+   - **Cooldown:** 0 (minimum seconds between plays - use this to prevent rapid-fire triggering)
    - Action: Play footstep container → SFX bus
+
+**Understanding Priority:** When the audio system runs out of available voices (default: 32), it "steals" the lowest priority voice to play a new sound. Use Critical for important sounds like dialogue, High for weapons, Medium for footsteps, and Low for ambient effects.
 
 3. **Script:**
 ```csharp
