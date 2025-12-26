@@ -60,17 +60,17 @@ Right-click in Project, create folders:
 
 ```
 Assets/
+├── Resources/
+│   └── Audio/
+│       ├── Events/  ← AudioEvents MUST go here
+│       └── States/  ← AudioStates MUST go here
 └── Audio/
-    ├── Resources/
-    │   └── Audio/
-    │       ├── Events/
-    │       └── States/
-    ├── Containers/
-    ├── Buses/
-    └── AudioClips/
+    ├── Containers/  ← Container assets
+    ├── Buses/       ← Bus assets
+    └── AudioClips/  ← Your .wav/.mp3 files
         ├── SFX/
         ├── Music/
-        └── VO/
+        └── Ambience/
 ```
 
 #### Step 3: Create Master Bus (1 min)
@@ -99,12 +99,12 @@ Assets/
    - Container Name: "TestClick"
    - Audio Clips: Drag in a sound
    - Volume: 1.0
-   - Enable Volume Randomization: ☑ (Min: -1, Max: 1)
-   - Enable Pitch Randomization: ☑ (Min: -50, Max: 50)
+   - Enable Volume Randomization: ✓ (Min: -1, Max: 1)
+   - Enable Pitch Randomization: ✓ (Min: -50, Max: 50)
 
 #### Step 6: Create First Event (2 min)
 
-1. Right-click `Resources/Audio/Events/` → Create → Audio System → Audio Event
+1. Right-click `Assets/Resources/Audio/Events/` → Create → Audio System → Audio Event
 2. Name: "Play_TestClick"
 3. Inspector:
    - Event Name: "Play_TestClick"
@@ -222,11 +222,11 @@ Master (-3dB)
   - Avoid Repeat Last: 1
   - Use Weighting: ✓ (all weights = 1.0)
   - Volume: 0.8
-  - Enable Volume Randomization: ☑ (Min: -1, Max: 1)
-  - Enable Pitch Randomization: ☑ (Min: -50, Max: 50)
+  - Enable Volume Randomization: ✓ (Min: -1, Max: 1)
+  - Enable Pitch Randomization: ✓ (Min: -50, Max: 50)
 
 **2. Create Event:**
-- Right-click `Resources/Audio/Events/UI/` → Create → Audio Event
+- Right-click `Assets/Resources/Audio/Events/UI/` → Create → Audio Event
 - Name: "Play_UI_ButtonClick"
 - Inspector:
   - Event Name: "Play_UI_ButtonClick"
@@ -420,8 +420,8 @@ public class AudioSettingsMenu : MonoBehaviour
   - Avoid Repeat Last: 2
   - Use Weighting: ✓ (equal weights)
   - Volume: 0.6
-  - Enable Volume Randomization: ☑ (Min: -2, Max: 2)
-  - Enable Pitch Randomization: ☑ (Min: -100, Max: 100)
+  - Enable Volume Randomization: ✓ (Min: -2, Max: 2)
+  - Enable Pitch Randomization: ✓ (Min: -100, Max: 100)
   - Is3D: ✓
   - Min Distance: 1
   - Max Distance: 15
@@ -942,7 +942,7 @@ public class SurfaceIdentifier : MonoBehaviour
 **Loop:**
 - Routing Container: "Music_MainTheme_Loop_RC"
 - Audio Clips: [Loop clip]
-- Loop: ☑ (loop enabled)
+- Loop: ✓ (loop enabled)
 - Volume: 1.0
 - Is3D: ☐ (2D)
 
@@ -1310,7 +1310,7 @@ public class CampfireAudio : MonoBehaviour
 
 **Normal State:**
 - Audio State: "State_Normal"
-- Save to: Resources/Audio/States/
+- Save to: Assets/Resources/Audio/States/
 - Inspector:
   - State Name: "Normal"
   - State Group: "Location"
@@ -1318,7 +1318,7 @@ public class CampfireAudio : MonoBehaviour
 
 **Underwater State:**
 - Audio State: "State_Underwater"
-- Save to: Resources/Audio/States/
+- Save to: Assets/Resources/Audio/States/
 - Inspector:
   - State Name: "Underwater"
   - State Group: "Location"
@@ -1943,4 +1943,4 @@ mh.Stop(2f);
 *For API documentation, see API_REFERENCE.md*
 *For quick start, see QUICK_START.md*
 
-*SFX System v1.0 - Professional Audio Middleware for Unity*
+*SFX System v1.2.0 - Professional Audio Middleware for Unity*
