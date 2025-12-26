@@ -575,6 +575,8 @@ public void Dispose()
 ```
 **Description:** Cleans up event handlers to prevent memory leaks.
 
+**Note:** As of v1.2, `Dispose()` is called automatically when `OnFinished` is triggered. Manual disposal is only needed if you want to clean up before the sound finishes (e.g., when destroying a GameObject that subscribed to events).
+
 ---
 
 ### AudioMultiHandle
@@ -644,6 +646,14 @@ public void Pause()
 public void Resume()
 ```
 **Description:** Resumes all paused voices.
+
+##### Dispose
+```csharp
+public void Dispose()
+```
+**Description:** Cleans up event handlers and voice references to prevent memory leaks.
+
+**Note:** As of v1.2, `Dispose()` is called automatically when `OnFinished` is triggered. Manual disposal is only needed if you want to clean up before the sounds finish (e.g., when destroying a GameObject that subscribed to events).
 
 ---
 
