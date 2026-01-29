@@ -1,8 +1,8 @@
 # SFX System Cookbook
 
-**Version:** 1.2
+**Version:** 2.0.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** December 2025
+**Last Updated:** Janurary 2026
 
 **Practical step-by-step recipes for common audio tasks**
 

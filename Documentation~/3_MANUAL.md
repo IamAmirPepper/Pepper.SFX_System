@@ -1,8 +1,8 @@
 # SFX System - Complete Technical Manual
 
-**Version:** 1.2
+**Version:** 2.0.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** December 2025
+**Last Updated:** Janurary 2026
 
 ---
 
@@ -2292,6 +2292,62 @@ lodDistances = new float[] { 10f, 25f, 50f, 100f };
 - Small levels: [5, 15, 30, 60]
 - Large open world: [25, 50, 100, 200]
 - Indoor: [5, 10, 20, 40]
+
+#### Listener Cache Management
+
+**Optimization:** The system caches the AudioListener reference to avoid repeated FindObjectOfType calls.
+
+**How It Works:**
+```csharp
+// Cache is retained until listener is destroyed or null
+// No timer-based refresh - only refreshes when actually needed
+Transform listener = ListenerUtil.Get();
+```
+
+**⚠️ IMPORTANT: When to Manually Refresh**
+
+**Standard Usage (Automatic):**
+- ✅ One camera with AudioListener
+- ✅ Switching cameras by destroying old one
+- ✅ Scene loading (old listener destroyed)
+- **Result:** Cache automatically refreshes - no action needed
+
+**Advanced Scenarios (Manual Refresh Required):**
+
+**Scenario 1: Camera swap without destroying old listener**
+```csharp
+// When switching cameras but keeping old one alive (disabled)
+oldCamera.GetComponent<AudioListener>().enabled = false;
+newCamera.GetComponent<AudioListener>().enabled = true;
+
+// ⚠️ REQUIRED: Tell audio system about the change
+ListenerUtil.Set(newCamera.transform);
+```
+
+**Scenario 2: Multiple listeners (unusual but possible)**
+```csharp
+// If you temporarily have multiple listeners and want specific one
+ListenerUtil.Set(primaryCamera.transform);
+```
+
+**Scenario 3: Force refresh for debugging**
+```csharp
+// Clear cache to force next Get() to search
+ListenerUtil.Invalidate();
+// Next Get() call will find listener again
+```
+
+**When Manual Refresh is NOT Needed:**
+- ❌ Scene transitions (automatic)
+- ❌ Camera destruction/creation (automatic)
+- ❌ Listener component added/removed (automatic if destroyed)
+- ❌ Standard gameplay (automatic)
+
+**Best Practice:**
+Most projects never need manual refresh. Only call `Set()` or `Invalidate()` if you:
+1. Swap cameras without destroying the old one
+2. Disable/enable AudioListener components directly
+3. Have a specific reason the cache might be stale
 
 ### 9.4 Mobile Optimization
 

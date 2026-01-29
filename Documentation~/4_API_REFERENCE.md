@@ -1,8 +1,8 @@
 # SFX System - API Reference
 
-**Version:** 1.2
+**Version:** 2.0.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** December 2025
+**Last Updated:** Janurary 2026
 
 **Complete API documentation for SFX System v1.0**
 
@@ -19,7 +19,12 @@
 7. [AudioState](#audiostate)
 8. [AudioVoiceEnhanced](#audiovoiceenhanced)
 9. [AudioExtensions](#audioextensions)
-10. [Enums & Data Structures](#enums--data-structures)
+10. [AudioEventRegistry](#audioeventregistry) ⭐ NEW
+11. [Editor Tools](#editor-tools) ⭐ NEW
+    - [QuickSoundSetupWizard](#quicksoundsetupwizard)
+    - [AudioEventEditor](#audioeventeditor)
+    - [AudioEventRegistryEditor](#audioeventregistryeditor)
+12. [Enums & Data Structures](#enums--data-structures)
 
 ---
 
@@ -1071,6 +1076,312 @@ float pitch = AudioExtensions.CentsToPitch(100f);  // 1.059 (1 semitone up)
 
 ---
 
+## AudioEventRegistry
+
+**Namespace:** `AudioSystem`
+**Inheritance:** `ScriptableObject`
+**Access:** Singleton via `AudioEventRegistry.Instance`
+
+### Description
+
+Central registry for AudioEvents and AudioStates. Eliminates the Resources folder requirement by tracking assets in a single registry.
+
+**Purpose:**
+- Store references to all Events and States
+- Auto-detect and use instead of Resources.LoadAll
+- Allow Events/States to live anywhere in project
+- Backwards compatible (falls back to Resources if no registry)
+
+### Properties
+
+#### Instance
+```csharp
+public static AudioEventRegistry Instance { get; }
+```
+**Description:** Singleton instance. Searches for registry in Resources, then entire project (editor only).
+
+**Returns:** The AudioEventRegistry asset, or null if not found.
+
+#### AudioEvents
+```csharp
+public IReadOnlyList<AudioEvent> AudioEvents { get; }
+```
+**Description:** All registered AudioEvents.
+
+**Returns:** Read-only list of registered events.
+
+#### AudioStates
+```csharp
+public IReadOnlyList<AudioState> AudioStates { get; }
+```
+**Description:** All registered AudioStates.
+
+**Returns:** Read-only list of registered states.
+
+---
+
+### Methods
+
+#### RegisterEvent
+```csharp
+public void RegisterEvent(AudioEvent audioEvent)
+```
+**Description:** Manually register an AudioEvent at runtime.
+
+**Parameters:**
+- `audioEvent` - The AudioEvent to register
+
+**Example:**
+```csharp
+var registry = AudioEventRegistry.Instance;
+registry.RegisterEvent(newEvent);
+```
+
+#### RegisterState
+```csharp
+public void RegisterState(AudioState audioState)
+```
+**Description:** Manually register an AudioState at runtime.
+
+**Parameters:**
+- `audioState` - The AudioState to register
+
+#### AutoPopulateFromResources (Editor Only)
+```csharp
+public void AutoPopulateFromResources()
+```
+**Description:** Automatically finds and registers all Events/States from Resources folders.
+
+**Usage:** Call from Inspector button or editor script.
+
+#### AutoPopulateFromProject (Editor Only)
+```csharp
+public void AutoPopulateFromProject()
+```
+**Description:** Searches entire project for Events/States and registers them.
+
+**Usage:** Call from Inspector button or editor script.
+
+#### ValidateRegistry (Editor Only)
+```csharp
+public void ValidateRegistry()
+```
+**Description:** Removes null/missing references from registry.
+
+**Usage:** Call from Inspector button to clean up registry.
+
+---
+
+### Setup Example
+
+```csharp
+// 1. Create registry asset:
+// Right-click → Create > Audio System > Audio Event Registry
+
+// 2. Place in: Assets/Audio/Resources/AudioEventRegistry.asset
+
+// 3. Populate registry (in Inspector):
+//    Click "Populate from Resources" or "Populate from Entire Project"
+
+// 4. AudioManager automatically uses registry at startup
+//    (Falls back to Resources.LoadAll if registry not found)
+```
+
+**Migration:** See [Advanced Migration Guide](5_ADVANCED_MIGRATION_GUIDE.md) for full details.
+
+---
+
+## Editor Tools
+
+**Note:** These tools are Unity Editor extensions and not available at runtime.
+
+### QuickSoundSetupWizard
+
+**Namespace:** `AudioSystemEditor`
+**Type:** EditorWindow
+**Access:** `Window > Audio System > Quick Sound Setup Wizard`
+
+#### Description
+
+One-click sound setup wizard that creates Bus + Container + Event with all references pre-filled.
+
+**Purpose:**
+- Eliminate tedious multi-step workflow
+- Create complete sound setup in 2 minutes
+- Auto-create folder structure
+- Validate Resources placement
+
+#### Inspector Fields
+
+**Sound Configuration:**
+- `soundName` (string) - Name for the sound
+- `audioClip` (AudioClip) - The audio file to use
+- `mode` (SetupMode) - Preset: SimpleSFX, Music, UISound, Custom
+
+**Advanced Options:**
+- `createNewBus` (bool) - Create new bus or use existing
+- `busName` (string) - Name for new bus (if creating)
+- `existingBus` (AudioBus) - Existing bus reference (if not creating)
+- `volume` (float) - Container volume (0-1)
+- `loop` (bool) - Enable looping
+- `is3D` (bool) - Enable 3D spatial audio
+
+**Output Paths:**
+- `eventFolder` (string) - Where to create Event
+- `containerFolder` (string) - Where to create Container
+- `busFolder` (string) - Where to create Bus
+
+#### Methods
+
+##### CreateSoundSetup
+```csharp
+void CreateSoundSetup()
+```
+**Description:** Creates complete sound setup (Bus + Container + Event).
+
+**Process:**
+1. Creates AudioBus (or uses existing)
+2. Creates RoutingContainer with clips
+3. Creates AudioEvent in Resources folder
+4. Wires all references automatically
+5. Auto-registers in AudioEventRegistry (if exists)
+
+##### CreateStandardFolders
+```csharp
+void CreateStandardFolders()
+```
+**Description:** Auto-creates standard folder structure.
+
+**Creates:**
+```
+Assets/Audio/
+├── Resources/
+│   └── Audio/
+│       ├── Events/
+│       └── States/
+├── Containers/
+├── Buses/
+└── AudioClips/
+```
+
+#### Usage Example
+
+**From Menu:**
+1. `Window > Audio System > Quick Sound Setup Wizard`
+2. Drop AudioClip in field
+3. Choose preset (e.g., "Simple SFX")
+4. Click "Create Complete Sound Setup"
+5. Done!
+
+**From Code (Advanced):**
+```csharp
+// Not typically needed - use menu instead
+var window = QuickSoundSetupWizard.ShowWindow();
+```
+
+💡 **Tip:** The wizard automatically detects if you've selected an AudioClip in the Project window and pre-fills it.
+
+---
+
+### AudioEventEditor
+
+**Namespace:** `AudioSystemEditor`
+**Type:** Custom Inspector (Editor Only)
+**Applies To:** AudioEvent assets
+
+#### Description
+
+Custom Inspector for AudioEvent with automatic validation and one-click fixes.
+
+**Features:**
+- Real-time Resources folder validation
+- Visual warnings if placed incorrectly
+- One-click "Move to Resources" button
+- Console warnings on asset creation
+
+#### Validation Behavior
+
+**✅ Correct Placement:**
+```
+Assets/Audio/Resources/Audio/Events/MyEvent.asset
+```
+Shows: "✓ Correctly placed in Resources/Audio/Events/"
+
+**⚠️ Warning: In Resources but wrong subfolder:**
+```
+Assets/Audio/Resources/MyEvent.asset
+```
+Shows: Warning + "Move to Resources/Audio/Events/" button
+
+**❌ Error: Not in Resources at all:**
+```
+Assets/Audio/Events/MyEvent.asset
+```
+Shows: Critical error + "Move to Resources/Audio/Events/" button
+
+#### Methods
+
+##### MoveToResourcesFolder
+```csharp
+void MoveToResourcesFolder()
+```
+**Description:** Automatically moves AudioEvent to correct Resources location.
+
+**Target Path:** `Assets/Audio/Resources/Audio/Events/`
+
+**Process:**
+1. Creates folders if needed
+2. Moves asset via AssetDatabase
+3. Shows success dialog
+4. Logs to Console
+
+📘 **Note:** This validation is automatic - just select an AudioEvent in the Inspector to see its status.
+
+---
+
+### AudioEventRegistryEditor
+
+**Namespace:** `AudioSystemEditor`
+**Type:** Custom Inspector (Editor Only)
+**Applies To:** AudioEventRegistry assets
+
+#### Description
+
+Custom Inspector for AudioEventRegistry with utility buttons and migration guide.
+
+**Features:**
+- One-click population from Resources
+- One-click population from entire project
+- Registry validation and cleanup
+- Statistics display
+- Built-in migration guide
+
+#### Inspector Buttons
+
+**Populate from Resources Folders:**
+- Finds Events/States in Resources folders
+- Registers them in registry
+- Fast for existing Resources-based projects
+
+**Populate from Entire Project:**
+- Searches entire project
+- Registers all Events/States found
+- Use when assets are not in Resources
+
+**Validate Registry (Remove Nulls):**
+- Removes missing/null references
+- Cleans up registry
+- Logs removed count
+
+**Clear All:**
+- Removes all registered assets
+- Confirmation dialog shown
+- Use before re-populating
+
+📘 **Note:** The Inspector shows real-time statistics (event count, state count) and a migration guide.
+
+---
+
 ## Enums & Data Structures
 
 ### VoicePriority
@@ -1276,4 +1587,4 @@ AudioMultiHandle mh = event.PostMulti(emitterParent);
 *For deep knowledge, see MANUAL.md*
 *For quick start, see QUICK_START.md*
 
-*SFX System v1.0 - Professional Audio Middleware for Unity*
+*SFX System v1.2.0 - Professional Audio Middleware for Unity*
