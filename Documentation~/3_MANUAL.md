@@ -1,8 +1,8 @@
 # SFX System - Complete Technical Manual
 
-**Version:** 2.0.0
+**Version:** 2.1.1
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** Janurary 2026
+**Last Updated:** January 2026
 
 ---
 

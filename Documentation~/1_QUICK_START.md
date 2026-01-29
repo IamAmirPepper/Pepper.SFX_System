@@ -1,8 +1,8 @@
 # SFX System - Quick Start Guide
 
-**Version:** 2.0.0
+**Version:** 2.1.1
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** Janurary 2026
+**Last Updated:** January 2026
 
 **Get your first sound playing in 2-10 minutes**
 
@@ -95,18 +95,38 @@ Pick the setup method that fits your workflow:
 
 ### Step 2: Create Sound Assets (1 minute)
 1. In Unity menu: `Window > Audio System > Quick Sound Setup Wizard`
-2. Select your AudioClip
+2. **Choose Creation Mode:**
+   - **Complete Setup** - Creates Bus + Container + Event all at once (recommended)
+   - **Container Only** - Just create a container
+   - **Event Only** - Just create an event (with existing container or blank)
+   - **Bus Only** - Just create a bus
+   - **Batch Import** - Import multiple clips at once
 3. Enter sound name (e.g., "ButtonClick")
-4. Choose preset: "UI Sound" / "Simple SFX" / "Music"
-5. Click **"Create Complete Sound Setup"**
+4. **Choose Preset** (8 available):
+   - Simple SFX, Music, UI Sound
+   - Ambience, Dialogue, Footsteps
+   - 3D Environmental, Weapon
+5. **Select Container Type:**
+   - **Routing** - Direct playback (plays all clips simultaneously if multiple added)
+   - **Random** - Random selection with weights
+   - **Sequence** - Sequential playback (Forward/Reverse/PingPong)
+   - **Switch** - Switch-based selection
+   - **Blend** - RTPC-driven real-time blending
+6. Add one or more AudioClips
+7. Configure advanced options if needed (pitch/volume randomization, 3D settings)
+8. Click **"Create Complete Sound Setup"**
 
 ✅ Done! The wizard creates:
-- AudioBus
-- Container
-- AudioEvent (in correct folder)
+- AudioBus (with custom name)
+- Container (any type: Routing, Random, Sequence, Switch, or Blend)
+- AudioEvent (with selectable action type)
 - All references pre-filled
 
-💡 **Tip:** The wizard also has an "Auto-Create Standard Folder Structure" button to set up all required folders automatically.
+💡 **Pro Tips:**
+- The wizard auto-detects selected audio clips and suggests batch import for multiple selections
+- Use "Auto-Create Standard Folder Structure" to set up all required folders
+- Each preset automatically configures appropriate settings (3D, pitch variation, etc.)
+- Routing containers can layer multiple clips for complex sounds (e.g., gunshot with shell eject)
 
 ### Step 3: Play in Code (30 seconds)
 ```csharp
