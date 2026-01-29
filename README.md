@@ -1,4 +1,4 @@
-# SFX System 1.2.0
+# SFX System 2.0.0
 
 A simple, modular sound effects system for Unity.
 
@@ -10,4 +10,4 @@ A simple, modular sound effects system for Unity.
 5. Paste: `https://github.com/IamAmirPepper/Pepper.SFX_System.git`
 6. To Reach Documentation:
 7. Download them from: `https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~`
-8. Or download them from: `https://github.com/IamAmirPepper/Pepper.SFX_System/releases`
+

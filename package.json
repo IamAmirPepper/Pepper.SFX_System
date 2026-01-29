@@ -1,8 +1,8 @@
 {
   "name": "com.pepper.sfx",
   "displayName": "Pepper's SFX System",
-  "version": "1.2.0",
-  "unity": "6000.0",
+  "version": "2.0.0",
+  "unity": "6000.0.48f1",
   "description": "Modular sound effects system for Unity.",
   "author": {
     "name": "Amir",
@@ -10,7 +10,6 @@
   },
 
   "documentationUrl": "https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~",
-  "documentationUrl2": "https://github.com/IamAmirPepper/Pepper.SFX_System/releases",
 
   "keywords": ["audio", "sfx","sound"]
 }

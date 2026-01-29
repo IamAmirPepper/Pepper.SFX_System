@@ -1,6 +1,5 @@
 # Changelog
-Added MultiPositionMode
-## [1.2.0] - 2025-12-24
-- Refactored Code Encapsulation
-- Re-Wrote Guides and Manuals
+## [2.0.0] - 2026-01-29
+Added A Quick Start Wizard
+Optimization Fixes
 ###
