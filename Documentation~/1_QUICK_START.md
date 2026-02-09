@@ -1,6 +1,6 @@
 # SFX System - Quick Start Guide
 
-**Version:** 2.1.1
+**Version:** 2.1.3
 **Unity Compatibility:** 6000.0.48f1 and above
 **Last Updated:** January 2026
 
