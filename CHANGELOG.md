@@ -1,6 +1,6 @@
 # Changelog
-## [2.1.4] - 2026-01-29
-Multi Position Phasing issues
+## [2.1.5] - 2026-03-08
+Fixed editor window bugs
 +
 
 ###
