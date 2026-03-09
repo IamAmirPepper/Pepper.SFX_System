@@ -1,6 +1,5 @@
 # Changelog
-## [2.1.5] - 2026-03-08
-Fixed editor window bugs
-+
+## [2.1.6] - 2026-03-09
+Sequence Container - added the abillity to toggle manual/automatic playing mode
 
 ###
