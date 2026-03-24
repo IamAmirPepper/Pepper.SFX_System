@@ -1,5 +1,4 @@
 # Changelog
-## [2.1.7] - 2026-03-10
-1. Additions of tooptips to various inspectors
-2. Added option to set AudioMixerGroup in the quick sound setup
+## [2.1.8] - 2026-03-24
+1. fixed issue with assembly references
 ###
