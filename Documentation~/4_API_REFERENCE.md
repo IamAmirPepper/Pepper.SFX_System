@@ -1,10 +1,10 @@
 # SFX System - API Reference
 
-**Version:** 2.1.3
+**Version:** 2.2.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** January 2026
+**Last Updated:** March 2026
 
-**Complete API documentation for SFX System v1.0**
+**Complete API documentation for SFX System v2.2.0**
 
 ---
 
@@ -17,21 +17,22 @@
 5. [Container Types](#container-types)
 6. [AudioBus](#audiobus)
 7. [AudioState](#audiostate)
-8. [AudioVoiceEnhanced](#audiovoiceenhanced)
-9. [AudioExtensions](#audioextensions)
-10. [AudioEventRegistry](#audioeventregistry) ⭐ NEW
-11. [Editor Tools](#editor-tools) ⭐ NEW
+8. [AudioVoice & AudioVoiceEnhanced](#audiovoice--audiovoiceenhanced)
+9. [AudioExtensions & Utilities](#audioextensions--utilities)
+10. [AudioEventRegistry](#audioeventregistry)
+11. [Multi-Position Emitters](#multi-position-emitters)
+12. [Editor Tools](#editor-tools)
     - [QuickSoundSetupWizard](#quicksoundsetupwizard)
     - [AudioEventEditor](#audioeventeditor)
     - [AudioEventRegistryEditor](#audioeventregistryeditor)
-12. [Enums & Data Structures](#enums--data-structures)
+13. [Enums & Data Structures](#enums--data-structures)
 
 ---
 
 ## AudioManager
 
 **Namespace:** `AudioSystem`
-**Inheritance:** `MonoBehaviour`
+**Inheritance:** `MonoBehaviour` (partial class)
 **Access:** Singleton via `AudioManager.Instance`
 
 ### Properties
@@ -49,14 +50,13 @@ public static AudioManager Instance { get; }
 
 #### PostEvent
 ```csharp
-public AudioHandle PostEvent(string eventName)
-public AudioHandle PostEvent(string eventName, GameObject parent, Vector3 position)
+public AudioHandle PostEvent(string eventName, GameObject source = null, Vector3 position = default)
 ```
 **Description:** Triggers an audio event by name.
 
 **Parameters:**
-- `eventName` - Name of the event to trigger (must exist in Resources/Audio/Events/)
-- `parent` - (Optional) GameObject to attach sound to
+- `eventName` - Name of the event to trigger (must exist in registry or Resources/Audio/Events/)
+- `source` - (Optional) GameObject to attach sound to
 - `position` - (Optional) 3D world position for spatial audio
 
 **Returns:** `AudioHandle` for controlling playback, or `null` if event not found.
@@ -67,18 +67,40 @@ AudioHandle handle = AudioManager.Instance.PostEvent("Play_Explosion");
 AudioHandle handle2 = AudioManager.Instance.PostEvent("Play_Footstep", gameObject, transform.position);
 ```
 
+#### GetEvent
+```csharp
+public AudioEvent GetEvent(string eventName)
+```
+**Description:** Gets an AudioEvent by name.
+
+**Parameters:**
+- `eventName` - Event name
+
+**Returns:** `AudioEvent`, or `null` if not found.
+
+#### GetEventContainer
+```csharp
+public AudioContainer GetEventContainer(string eventName)
+```
+**Description:** Gets the first container referenced by an event.
+
+**Parameters:**
+- `eventName` - Event name
+
+**Returns:** `AudioContainer`, or `null` if not found.
+
 ---
 
 ### RTPC Methods
 
 #### SetRTPC
 ```csharp
-public void SetRTPC(string parameter, float value)
+public void SetRTPC(string parameterName, float value)
 ```
 **Description:** Sets a Real-Time Parameter Control value.
 
 **Parameters:**
-- `parameter` - Parameter name (case-sensitive)
+- `parameterName` - Parameter name (case-sensitive)
 - `value` - Parameter value (typically 0-1, but depends on usage)
 
 **Example:**
@@ -89,18 +111,56 @@ AudioManager.Instance.SetRTPC("EngineRPM", 0.5f);
 
 #### GetRTPC
 ```csharp
-public float GetRTPC(string parameter)
+public float GetRTPC(string parameterName)
 ```
 **Description:** Gets current value of an RTPC parameter.
 
-**Parameters:**
-- `parameter` - Parameter name
-
 **Returns:** Current value, or `0f` if parameter doesn't exist.
+
+#### TransitionRTPC
+```csharp
+public void TransitionRTPC(string parameterName, float targetValue, float duration)
+```
+**Description:** Smoothly transitions an RTPC parameter to a target value over time.
+
+**Parameters:**
+- `parameterName` - Parameter name
+- `targetValue` - Target value
+- `duration` - Transition duration in seconds
 
 **Example:**
 ```csharp
-float intensity = AudioManager.Instance.GetRTPC("CombatIntensity");
+AudioManager.Instance.TransitionRTPC("CombatIntensity", 1.0f, 2f);
+```
+
+#### GetAllRTPCs
+```csharp
+public IReadOnlyDictionary<string, float> GetAllRTPCs()
+```
+**Description:** Gets all current RTPC values.
+
+**Returns:** Dictionary mapping parameter names to values.
+
+#### RegisterRTPCListener / UnregisterRTPCListener
+```csharp
+public void RegisterRTPCListener(IRTPCListener listener)
+public void UnregisterRTPCListener(IRTPCListener listener)
+```
+**Description:** Registers/unregisters an object to receive RTPC change callbacks.
+
+**Example:**
+```csharp
+// Implement IRTPCListener
+public class MyComponent : MonoBehaviour, IRTPCListener
+{
+    void OnEnable() => AudioManager.Instance.RegisterRTPCListener(this);
+    void OnDisable() => AudioManager.Instance.UnregisterRTPCListener(this);
+
+    public void OnRTPCChanged(string parameter, float value)
+    {
+        if (parameter == "EngineRPM") UpdateEngine(value);
+    }
+}
 ```
 
 ---
@@ -120,7 +180,6 @@ public void SetSwitch(string group, string value)
 **Example:**
 ```csharp
 AudioManager.Instance.SetSwitch("Surface_Type", "Metal");
-AudioManager.Instance.SetSwitch("Weather", "Rain");
 ```
 
 #### GetSwitch
@@ -129,15 +188,15 @@ public string GetSwitch(string group)
 ```
 **Description:** Gets current switch value for a group.
 
-**Parameters:**
-- `group` - Switch group name
-
 **Returns:** Current switch value, or empty string if not set.
 
-**Example:**
+#### GetAllSwitches
 ```csharp
-string surface = AudioManager.Instance.GetSwitch("Surface_Type");
+public IReadOnlyDictionary<string, string> GetAllSwitches()
 ```
+**Description:** Gets all current switch values.
+
+**Returns:** Dictionary mapping switch groups to their current values.
 
 ---
 
@@ -181,9 +240,6 @@ public AudioState GetActiveState(string stateGroup)
 ```
 **Description:** Gets the currently active state for a state group.
 
-**Parameters:**
-- `stateGroup` - State group name
-
 **Returns:** Active `AudioState`, or `null` if no state active.
 
 #### GetActiveStateName
@@ -191,9 +247,6 @@ public AudioState GetActiveState(string stateGroup)
 public string GetActiveStateName(string stateGroup)
 ```
 **Description:** Gets the name of the currently active state.
-
-**Parameters:**
-- `stateGroup` - State group name
 
 **Returns:** State name, or empty string if none active.
 
@@ -226,14 +279,34 @@ AudioManager.Instance.SetBusVolume("Music", -6f, 1f);  // Duck to half volume ov
 AudioManager.Instance.SetBusVolume("SFX", 0f, 0.5f);    // Return to full over 0.5s
 ```
 
+#### TransitionBusVolume
+```csharp
+public void TransitionBusVolume(AudioBus bus, float targetVolumeDb, float transitionTime)
+```
+**Description:** Transitions a bus to a target volume over time using the bus reference directly.
+
+**Parameters:**
+- `bus` - The AudioBus reference
+- `targetVolumeDb` - Target volume in dB
+- `transitionTime` - Transition duration
+
+#### SetBusEffectProperty
+```csharp
+public void SetBusEffectProperty(AudioBus bus, string propertyName, float value, float transitionTime = 0f)
+```
+**Description:** Sets an effect property on a bus with optional transition.
+
+**Parameters:**
+- `bus` - Target bus
+- `propertyName` - Effect property name
+- `value` - Target value
+- `transitionTime` - Transition duration (0 = instant)
+
 #### GetBus
 ```csharp
 public AudioBus GetBus(string busName)
 ```
 **Description:** Gets a bus by name.
-
-**Parameters:**
-- `busName` - Bus name
 
 **Returns:** `AudioBus`, or master bus if not found.
 
@@ -269,16 +342,16 @@ AudioManager.Instance.CrossFade(oldMusicContainer, newMusicContainer, 2f);
 
 ---
 
-### Volume Control Methods
+### Volume & Global Control Methods
 
 #### SetMasterVolume
 ```csharp
-public void SetMasterVolume(float linear)
+public void SetMasterVolume(float volume)
 ```
 **Description:** Sets master volume (global volume multiplier).
 
 **Parameters:**
-- `linear` - Volume in linear scale (0-1)
+- `volume` - Volume in linear scale (0-1)
 
 **Example:**
 ```csharp
@@ -295,15 +368,36 @@ public float GetMasterVolume()
 
 #### MuteAll
 ```csharp
-public void MuteAll()
+public void MuteAll(bool mute)
 ```
-**Description:** Mutes all audio.
+**Description:** Mutes or unmutes all audio.
 
-#### UnmuteAll
+**Parameters:**
+- `mute` - `true` to mute, `false` to unmute
+
+**Example:**
 ```csharp
-public void UnmuteAll()
+AudioManager.Instance.MuteAll(true);   // Mute everything
+AudioManager.Instance.MuteAll(false);  // Unmute everything
 ```
-**Description:** Unmutes all audio.
+
+#### StopAllSounds
+```csharp
+public void StopAllSounds()
+```
+**Description:** Stops all currently playing sounds.
+
+#### PauseAll
+```csharp
+public void PauseAll()
+```
+**Description:** Pauses all currently playing sounds.
+
+#### UnpauseAll
+```csharp
+public void UnpauseAll()
+```
+**Description:** Resumes all paused sounds.
 
 ---
 
@@ -311,7 +405,7 @@ public void UnmuteAll()
 
 #### GetVoice
 ```csharp
-public AudioVoiceEnhanced GetVoice()
+public AudioVoice GetVoice()
 ```
 **Description:** Allocates a voice from the pool. **Internal use only.**
 
@@ -319,23 +413,41 @@ public AudioVoiceEnhanced GetVoice()
 
 #### ReturnVoice
 ```csharp
-public void ReturnVoice(AudioVoiceEnhanced voice)
+public void ReturnVoice(AudioVoice voice)
 ```
 **Description:** Returns a voice to the pool. **Internal use only.**
 
 #### GetStatistics
 ```csharp
-public Statistics GetStatistics()
+public AudioStatistics GetStatistics()
 ```
 **Description:** Gets current audio system statistics.
 
-**Returns:** `Statistics` struct with voice counts, etc.
+**Returns:** `AudioStatistics` with voice counts and system info.
 
 **Example:**
 ```csharp
 var stats = AudioManager.Instance.GetStatistics();
-Debug.Log($"Real voices: {stats.realVoices}/{stats.maxRealVoices}");
+Debug.Log($"Active voices: {stats.activeVoices}/{stats.totalVoices}");
 ```
+
+---
+
+### Debug Methods
+
+#### GetVirtualVoiceCount
+```csharp
+public int GetVirtualVoiceCount()
+```
+**Description:** Gets the number of currently virtualized voices.
+
+#### GetActiveVoicesDebug
+```csharp
+public List<AudioVoiceDebugInfo> GetActiveVoicesDebug()
+```
+**Description:** Gets detailed debug info for all active voices.
+
+**Returns:** List of `AudioVoiceDebugInfo` for each active voice.
 
 ---
 
@@ -351,101 +463,156 @@ Debug.Log($"Real voices: {stats.realVoices}/{stats.maxRealVoices}");
 public string EventName { get; }
 ```
 **Description:** Unique name identifying this event.
-**Read-only.**
+
+#### Actions
+```csharp
+public List<EventAction> Actions { get; }
+```
+**Description:** List of actions to execute when this event is posted.
 
 #### Priority
 ```csharp
 public VoicePriority Priority { get; }
 ```
 **Description:** Voice stealing priority (Low, Medium, High, Critical).
-**Read-only.**
 
 #### MaxInstances
 ```csharp
 public int MaxInstances { get; }
 ```
 **Description:** Maximum concurrent instances (0 = unlimited).
-**Read-only.**
 
 #### StealBehavior
 ```csharp
 public VoiceStealBehavior StealBehavior { get; }
 ```
-**Description:** How to steal voices when max reached.
-**Read-only.**
+**Description:** How to steal voices when max reached (Oldest, Quietest, Furthest, LowestPriority).
 
 #### Cooldown
 ```csharp
 public float Cooldown { get; }
 ```
 **Description:** Minimum time between triggers in seconds.
-**Read-only.**
 
 ---
 
 ### Methods
 
-#### Post (Basic)
+#### Post
 ```csharp
-public AudioHandle Post()
+public AudioHandle Post(GameObject source = null, Vector3 position = default)
 ```
-**Description:** Posts the event at origin (0,0,0), non-spatial.
+**Description:** Posts the event. Optionally attach to a GameObject and/or specify a 3D position.
+
+**Parameters:**
+- `source` - (Optional) GameObject to attach sound to
+- `position` - (Optional) 3D world position for spatial audio
 
 **Returns:** `AudioHandle` for controlling playback.
 
 **Example:**
 ```csharp
+// Non-spatial (2D)
 AudioHandle handle = myEvent.Post();
-```
 
-#### Post (With Parent)
-```csharp
-public AudioHandle Post(GameObject parent)
-```
-**Description:** Posts the event attached to a GameObject.
-
-**Parameters:**
-- `parent` - GameObject to attach to
-
-**Returns:** `AudioHandle`.
-
-**Example:**
-```csharp
-AudioHandle handle = myEvent.Post(gameObject);
-```
-
-#### Post (Full)
-```csharp
-public AudioHandle Post(GameObject parent, Vector3 position)
-```
-**Description:** Posts the event at specific 3D position, optionally attached.
-
-**Parameters:**
-- `parent` - GameObject to attach (or null)
-- `position` - 3D world position
-
-**Returns:** `AudioHandle`.
-
-**Example:**
-```csharp
+// Attached to a GameObject at its position
 AudioHandle handle = myEvent.Post(gameObject, transform.position);
-AudioHandle handle2 = myEvent.Post(null, explosionPosition);
+
+// At a specific world position, not attached
+AudioHandle handle = myEvent.Post(null, explosionPosition);
 ```
 
-#### PostMulti
+#### PostMultiPosition
 ```csharp
-public AudioMultiHandle PostMulti(AudioMultiPositionEmitterParent parent)
+public AudioMultiHandle PostMultiPosition(Vector3[] positions, GameObject source = null)
+public AudioMultiHandle PostMultiPosition(Transform[] transforms, GameObject source = null)
+public AudioMultiHandle PostMultiPosition(AudioMultiPositionEmitterParent emitterParent, GameObject source = null)
 ```
-**Description:** Posts event in multi-position mode (synchronized across multiple emitters).
+**Description:** Posts event in multi-position mode (synchronized across multiple positions or emitters).
 
 **Parameters:**
-- `parent` - Multi-position emitter parent component
+- `positions` - Array of 3D world positions
+- `transforms` - Array of transforms to track
+- `emitterParent` - Multi-position emitter parent component
+- `source` - (Optional) Source GameObject
 
 **Returns:** `AudioMultiHandle` for controlling all voices.
 
 **Example:**
 ```csharp
-AudioMultiHandle multiHandle = myEvent.PostMulti(emitterParent);
+// From position array
+Vector3[] speakerPositions = { pos1, pos2, pos3 };
+AudioMultiHandle mh = myEvent.PostMultiPosition(speakerPositions);
+
+// From transforms
+Transform[] speakers = GetSpeakerTransforms();
+AudioMultiHandle mh = myEvent.PostMultiPosition(speakers);
+
+// From emitter parent component
+AudioMultiHandle mh = myEvent.PostMultiPosition(emitterParent);
+```
+
+#### GetContainer
+```csharp
+public AudioContainer GetContainer()
+```
+**Description:** Gets the first container referenced in this event's actions.
+
+**Returns:** `AudioContainer`, or `null` if no Play action exists.
+
+#### GetFirstActiveSource
+```csharp
+public AudioSource GetFirstActiveSource()
+```
+**Description:** Gets the first active AudioSource for this event.
+
+**Returns:** `AudioSource`, or `null` if no voice is active.
+
+#### CreateNew (Editor Only)
+```csharp
+public static AudioEvent CreateNew(string name, AudioContainer container, AudioBus bus)
+```
+**Description:** Factory method to create a new AudioEvent asset with pre-configured Play action.
+
+---
+
+### EventAction (Nested Class)
+
+```csharp
+[Serializable]
+public class EventAction
+{
+    public ActionType type;
+    public AudioContainer container;
+    public AudioBus targetBus;
+    public float delay;
+    public float fadeDuration;
+    public AnimationCurve fadeCurve;
+    public string switchGroup;
+    public string switchValue;
+    public string rtpcName;
+    public float rtpcValue;
+    public string stateName;
+    public AudioContainer fadeFromContainer;
+    public CrossfadeType crossfadeType;
+
+    public enum ActionType
+    {
+        Play, Stop, Pause, Resume,
+        SetSwitch, SetRTPC, SetState,
+        TriggerDucking, CrossFade
+    }
+}
+```
+
+### CrossfadeType (Nested Enum)
+
+```csharp
+public enum CrossfadeType
+{
+    Linear,      // Linear crossfade
+    EqualPower   // Maintains perceived loudness
+}
 ```
 
 ---
@@ -459,41 +626,14 @@ AudioMultiHandle multiHandle = myEvent.PostMulti(emitterParent);
 
 #### Properties
 
-##### EventName
 ```csharp
 public string EventName { get; }
-```
-**Description:** Name of the originating event.
-
-##### SourceEvent
-```csharp
 public AudioEvent SourceEvent { get; }
-```
-**Description:** Reference to the source event.
-
-##### IsPaused
-```csharp
 public bool IsPaused { get; }
-```
-**Description:** Whether playback is paused.
-
-##### isPlaying
-```csharp
 public bool isPlaying { get; }
+public float time { get; }      // Current playback time in seconds
+public float duration { get; }  // Total clip duration in seconds
 ```
-**Description:** Whether audio is currently playing.
-
-##### time
-```csharp
-public float time { get; }
-```
-**Description:** Current playback time in seconds.
-
-##### duration
-```csharp
-public float duration { get; }
-```
-**Description:** Total clip duration in seconds.
 
 ---
 
@@ -527,11 +667,6 @@ public void SetVolume(float linear)
 **Parameters:**
 - `linear` - Volume multiplier (0-1)
 
-**Example:**
-```csharp
-handle.SetVolume(0.5f);  // Half volume
-```
-
 ##### SetPitch
 ```csharp
 public void SetPitch(float semitones)
@@ -541,12 +676,6 @@ public void SetPitch(float semitones)
 **Parameters:**
 - `semitones` - Pitch offset (-12 to +12 typical range)
 
-**Example:**
-```csharp
-handle.SetPitch(2f);   // 2 semitones up
-handle.SetPitch(-3f);  // 3 semitones down
-```
-
 ##### Stop
 ```csharp
 public void Stop(float fadeTime = 0.1f)
@@ -555,12 +684,6 @@ public void Stop(float fadeTime = 0.1f)
 
 **Parameters:**
 - `fadeTime` - Fade-out duration in seconds
-
-**Example:**
-```csharp
-handle.Stop();      // Quick 0.1s fade
-handle.Stop(2f);    // 2 second fade
-```
 
 ##### Pause
 ```csharp
@@ -580,7 +703,7 @@ public void Dispose()
 ```
 **Description:** Cleans up event handlers to prevent memory leaks.
 
-**Note:** As of v1.2, `Dispose()` is called automatically when `OnFinished` is triggered. Manual disposal is only needed if you want to clean up before the sound finishes (e.g., when destroying a GameObject that subscribed to events).
+**Note:** `Dispose()` is called automatically when `OnFinished` is triggered. Manual disposal is only needed if you want to clean up before the sound finishes (e.g., when destroying a GameObject that subscribed to events).
 
 ---
 
@@ -591,21 +714,31 @@ public void Dispose()
 
 #### Properties
 
-##### VoiceCount
 ```csharp
+public string EventName { get; }
+public AudioEvent SourceEvent { get; }
+public bool IsPaused { get; }
+public bool isPlaying { get; }
+public float time { get; }
+public float duration { get; }
 public int VoiceCount { get; }
+public bool HasVoices { get; }
+public MultiPositionType PositionType { get; }
 ```
-**Description:** Number of voices in this multi-handle.
-
-##### IsPlaying
-```csharp
-public bool IsPlaying { get; }
-```
-**Description:** Whether any voice is playing.
 
 ---
 
-#### Methods
+#### Events
+
+```csharp
+public event System.Action OnStarted;
+public event System.Action OnLoop;
+public event System.Action OnFinished;
+```
+
+---
+
+#### Global Methods (All Voices)
 
 ##### SetVolume
 ```csharp
@@ -613,17 +746,11 @@ public void SetVolume(float linear)
 ```
 **Description:** Sets volume for all voices.
 
-**Parameters:**
-- `linear` - Volume multiplier (0-1)
-
 ##### SetPitch
 ```csharp
 public void SetPitch(float semitones)
 ```
 **Description:** Sets pitch for all voices.
-
-**Parameters:**
-- `semitones` - Pitch offset in semitones
 
 ##### Stop
 ```csharp
@@ -631,34 +758,78 @@ public void Stop(float fadeTime = 0.1f)
 ```
 **Description:** Stops all voices with fade.
 
-**Parameters:**
-- `fadeTime` - Fade duration
-
-##### StopImmediate
-```csharp
-public void StopImmediate()
-```
-**Description:** Stops all voices immediately (no fade).
-
-##### Pause
+##### Pause / Resume
 ```csharp
 public void Pause()
-```
-**Description:** Pauses all voices.
-
-##### Resume
-```csharp
 public void Resume()
 ```
-**Description:** Resumes all paused voices.
+**Description:** Pauses/resumes all voices.
 
 ##### Dispose
 ```csharp
 public void Dispose()
 ```
-**Description:** Cleans up event handlers and voice references to prevent memory leaks.
+**Description:** Cleans up event handlers and voice references.
 
-**Note:** As of v1.2, `Dispose()` is called automatically when `OnFinished` is triggered. Manual disposal is only needed if you want to clean up before the sounds finish (e.g., when destroying a GameObject that subscribed to events).
+---
+
+#### Per-Voice Methods
+
+##### SetVoiceVolume
+```csharp
+public void SetVoiceVolume(int voiceIndex, float volumeMultiplier)
+```
+**Description:** Sets volume for a specific voice by index.
+
+##### SetVoicePitch
+```csharp
+public void SetVoicePitch(int voiceIndex, float semitones)
+```
+**Description:** Sets pitch for a specific voice by index.
+
+##### StopVoice
+```csharp
+public void StopVoice(int voiceIndex, float fadeTime = 0.1f)
+```
+**Description:** Stops a specific voice with fade.
+
+##### PauseVoice / ResumeVoice
+```csharp
+public void PauseVoice(int voiceIndex)
+public void ResumeVoice(int voiceIndex)
+```
+**Description:** Pauses/resumes a specific voice.
+
+---
+
+#### Position Methods
+
+##### UpdatePositions
+```csharp
+public void UpdatePositions(Vector3[] newPositions)
+public void UpdatePositions(Transform[] newTransforms)
+```
+**Description:** Updates emitter positions for all voices.
+
+##### RefreshPositions
+```csharp
+public void RefreshPositions()
+```
+**Description:** Re-reads positions from tracked transforms.
+
+##### GetVoicePosition
+```csharp
+public Vector3? GetVoicePosition(int voiceIndex)
+```
+**Description:** Gets position of a specific voice.
+
+**Returns:** Position, or `null` if index out of range.
+
+##### GetAllPositions
+```csharp
+public Vector3[] GetAllPositions()
+```
+**Description:** Gets positions of all voices.
 
 ---
 
@@ -670,53 +841,17 @@ public void Dispose()
 
 ### Properties
 
-#### ContainerName
 ```csharp
 public string ContainerName { get; }
-```
-**Description:** Unique container identifier.
-
-#### Description
-```csharp
 public string Description { get; }
-```
-**Description:** Designer notes/documentation.
-
-#### Tags
-```csharp
 public List<string> Tags { get; }
-```
-**Description:** Searchable tags for organization.
-
-#### MixerGroup
-```csharp
 public AudioMixerGroup MixerGroup { get; set; }
-```
-**Description:** Optional AudioMixerGroup override.
-
-#### Is3D
-```csharp
 public bool Is3D { get; }
-```
-**Description:** Whether this container uses 3D spatialization.
-
-#### MinDistance
-```csharp
 public float MinDistance { get; }
-```
-**Description:** Distance for full volume (3D only).
-
-#### MaxDistance
-```csharp
-public float MaxDistance { get; }
-```
-**Description:** Distance for zero volume (3D only).
-
-#### RolloffMode
-```csharp
+public float MaxDistance { get; set; }
 public AudioRolloffMode RolloffMode { get; }
+public bool HasOverrides { get; }
 ```
-**Description:** Volume attenuation curve (Logarithmic/Linear/Custom).
 
 ---
 
@@ -728,23 +863,63 @@ public abstract AudioVoice Play(Vector3 position = default, GameObject parent = 
 ```
 **Description:** Plays the container. **Implemented by subclasses.**
 
-**Parameters:**
-- `position` - 3D world position
-- `parent` - GameObject to attach to
-
 **Returns:** `AudioVoice` instance.
 
-#### Stop
+#### Stop / StopImmediate
 ```csharp
 public abstract void Stop()
-```
-**Description:** Stops all active voices from this container.
-
-#### StopImmediate
-```csharp
 public abstract void StopImmediate()
 ```
-**Description:** Immediately stops all voices (no fade).
+**Description:** Stops all active voices from this container (with or without fade).
+
+#### Runtime Override Methods
+```csharp
+public void SetOverride(ContainerOverrides overrides)
+public void SetOverride3D(bool value)
+public void ClearOverrides()
+```
+**Description:** Apply or clear non-serialized runtime 3D setting overrides. These do not persist to the asset.
+
+**Example:**
+```csharp
+// Override 3D settings at runtime
+var overrides = new AudioContainer.ContainerOverrides
+{
+    is3D = true,
+    minDistance = 2f,
+    maxDistance = 30f
+};
+myContainer.SetOverride(overrides);
+
+// Or just toggle 3D
+myContainer.SetOverride3D(true);
+
+// Clear all overrides
+myContainer.ClearOverrides();
+```
+
+#### Voice Query Methods
+```csharp
+public AudioSource GetFirstActiveSource()
+public bool HasActiveVoices()
+public int GetActiveVoiceCount()
+```
+**Description:** Query the state of voices currently playing from this container.
+
+---
+
+### ContainerOverrides (Nested Struct)
+
+```csharp
+public struct ContainerOverrides
+{
+    public bool? is3D;
+    public float? minDistance;
+    public float? maxDistance;
+    public AudioRolloffMode? rolloffMode;
+    public void Clear();
+}
+```
 
 ---
 
@@ -762,7 +937,12 @@ public float Volume { get; }
 public bool Loop { get; }
 ```
 
-**Description:** Plays all assigned clips simultaneously.
+**Description:** Plays all assigned clips simultaneously. Use for layered sounds (e.g., explosion = blast + debris + shockwave).
+
+**Factory Method (Editor Only):**
+```csharp
+public static RoutingContainer CreateNew(string name, AudioClip clip, float vol = 1f, bool looping = false, bool is3D = false)
+```
 
 ---
 
@@ -780,6 +960,13 @@ public float Volume { get; }
 public bool Loop { get; }
 ```
 
+#### Methods
+
+```csharp
+public void ClearHistory()
+```
+**Description:** Clears the repeat-avoidance history.
+
 **Description:** Randomly selects one clip per play, with weighting and repeat avoidance.
 
 ---
@@ -792,9 +979,22 @@ public bool Loop { get; }
 
 ```csharp
 public List<SequenceEntry> Entries { get; }
-public PlaybackMode Mode { get; }
+public SequenceContainer.PlaybackMode SequencePlaybackMode { get; }
 public bool LoopSequence { get; }
+public bool AutoAdvance { get; set; }
 public float Volume { get; }
+```
+
+#### PlaybackMode (Nested Enum)
+
+```csharp
+public enum PlaybackMode
+{
+    Forward,   // 0->1->2->3->0...
+    Reverse,   // 3->2->1->0->3...
+    PingPong,  // 0->1->2->3->2->1->0...
+    Random     // Random order
+}
 ```
 
 #### Methods
@@ -802,9 +1002,10 @@ public float Volume { get; }
 ```csharp
 public void ResetSequence()
 public void SetIndex(int index)
+public AudioVoice PlayNext(Vector3 position = default, GameObject parent = null)
 ```
 
-**Description:** Plays clips in sequence (forward, reverse, ping-pong, or random order).
+**Description:** Plays clips in sequence. `PlayNext()` advances the sequence and plays the next clip. `AutoAdvance` controls whether the sequence auto-advances after each clip finishes.
 
 ---
 
@@ -836,6 +1037,7 @@ public AudioContainer GetActiveContainer()
 ### BlendContainer
 
 **Menu:** Create > Audio System > Blend Container
+**Implements:** `IRTPCListener`
 
 #### Properties
 
@@ -852,9 +1054,10 @@ public IReadOnlyList<AudioVoice> LayerVoices { get; }
 ```csharp
 public void UpdateBlend(float blendValue)
 public float GetCurrentBlendValue()
+public void OnRTPCChanged(string parameter, float value)
 ```
 
-**Description:** Plays multiple containers with RTPC-driven crossfading.
+**Description:** Plays multiple containers with RTPC-driven crossfading. Automatically registered as an RTPC listener when playing.
 
 ---
 
@@ -865,68 +1068,78 @@ public float GetCurrentBlendValue()
 
 ### Properties
 
-#### BusName
 ```csharp
 public string BusName { get; }
-```
-**Description:** Bus identifier.
-
-#### ParentBus
-```csharp
 public AudioBus ParentBus { get; }
-```
-**Description:** Parent bus in hierarchy (null if root).
-
-#### MixerGroup
-```csharp
 public AudioMixerGroup MixerGroup { get; }
-```
-**Description:** Unity AudioMixerGroup for this bus.
-
-#### VolumeDb
-```csharp
 public float VolumeDb { get; }
-```
-**Description:** Volume in decibels.
-
-#### VolumeMultiplier
-```csharp
 public float VolumeMultiplier { get; }
+public bool Mute { get; }
+public bool Solo { get; }
+public IReadOnlyList<EffectSend> Sends { get; }
+public bool EnableDucking { get; }
+public IReadOnlyList<DuckingTarget> DuckingTargets { get; }
+public float DuckingAttack { get; }
+public float DuckingRelease { get; }
 ```
-**Description:** Linear volume multiplier (0-1).
-
-#### Mute
-```csharp
-public bool Mute { get; set; }
-```
-**Description:** Mute this bus.
-
-#### Solo
-```csharp
-public bool Solo { get; set; }
-```
-**Description:** Solo this bus (mute all others).
 
 ---
 
 ### Methods
 
-#### SetVolume
+#### Volume & Mute
 ```csharp
-public void SetVolume(float volumeDb)
+public void SetVolume(float newVolumeDb)
+public float GetFinalVolume()
+public void SetMute(bool newMute)
+public void SetSolo(bool newSolo)
 ```
-**Description:** Sets bus volume in dB.
+**Description:** `GetFinalVolume()` returns the final linear volume including the entire parent bus hierarchy.
 
-**Parameters:**
-- `volumeDb` - Volume in decibels
-
-#### GetLinearVolume
+#### Voice Management
 ```csharp
-public float GetLinearVolume()
+public void AssignToVoice(AudioVoiceEnhanced voice)
+public void RemoveVoice(AudioVoiceEnhanced voice)
+public AudioSource GetFirstActiveSource()
 ```
-**Description:** Gets final linear volume (including parent hierarchy).
 
-**Returns:** Combined volume (0-1).
+#### Ducking
+```csharp
+public void TriggerDucking(float holdDuration = 0f)
+public void ApplyDucking(float amountDb, float attack, float hold, float release)
+```
+**Description:** `TriggerDucking()` uses the bus's configured ducking settings. `ApplyDucking()` applies custom ducking parameters.
+
+#### Factory Methods (Editor Only)
+```csharp
+public static AudioBus CreateNew(string name, AudioBus parent = null, AudioMixerGroup mixer = null)
+public void EditorSetConfiguration(string name, AudioBus parent = null, AudioMixerGroup mixer = null)
+```
+
+---
+
+### EffectSend (Nested Class)
+
+```csharp
+[Serializable]
+public class EffectSend
+{
+    public string sendName;
+    public float sendLevel;
+    public bool prePost;
+}
+```
+
+### DuckingTarget (Nested Class)
+
+```csharp
+[Serializable]
+public class DuckingTarget
+{
+    public AudioBus targetBus;
+    public float duckAmount;
+}
+```
 
 ---
 
@@ -937,17 +1150,14 @@ public float GetLinearVolume()
 
 ### Properties
 
-#### StateName
 ```csharp
 public string StateName { get; }
-```
-**Description:** State identifier.
-
-#### StateGroup
-```csharp
 public string StateGroup { get; }
+public IReadOnlyList<BusVolumeProperty> BusVolumes { get; }
+public IReadOnlyList<SwitchProperty> SwitchValues { get; }
+public IReadOnlyList<RTPCProperty> RtpcValues { get; }
+public IReadOnlyList<EffectProperty> EffectProperties { get; }
 ```
-**Description:** State group (mutually exclusive states).
 
 ---
 
@@ -955,24 +1165,82 @@ public string StateGroup { get; }
 
 #### Apply
 ```csharp
-public void Apply(float transitionTime = 0.5f)
+public void Apply(float transitionTime)
 ```
 **Description:** Applies this state's properties (bus volumes, RTPCs, switches, effects).
 
-**Parameters:**
-- `transitionTime` - Transition duration in seconds
+---
+
+### Nested Property Classes
+
+```csharp
+[Serializable]
+public class BusVolumeProperty
+{
+    public AudioBus bus;
+    public float volumeDb;
+}
+
+[Serializable]
+public class SwitchProperty
+{
+    public string switchGroup;
+    public string switchValue;
+}
+
+[Serializable]
+public class RTPCProperty
+{
+    public string parameterName;
+    public float value;
+}
+
+[Serializable]
+public class EffectProperty
+{
+    public AudioBus bus;
+    public string propertyName;
+    public float value;
+}
+```
 
 ---
 
-## AudioVoiceEnhanced
+## AudioVoice & AudioVoiceEnhanced
+
+### AudioVoice (Base)
 
 **Namespace:** `AudioSystem`
-**Description:** Internal voice representation. **Not typically accessed directly.**
+**Description:** Base voice representation.
 
-### Properties
+#### Properties
 
 ```csharp
 public AudioSource source { get; }
+public bool isPlaying { get; }
+public float volumeMultiplier { get; set; }
+```
+
+#### Methods
+
+```csharp
+public void SetVolume(float volume)
+public void UpdateMasterVolume(float masterVolume)
+public void Stop(float fadeTime = 0f)
+public void StopImmediate()
+```
+
+---
+
+### AudioVoiceEnhanced
+
+**Namespace:** `AudioSystem`
+**Inheritance:** `AudioVoice`
+**Description:** Enhanced voice with gain stack, virtualization, and scheduling. **Not typically accessed directly.**
+
+#### Properties
+
+```csharp
 public GainStack GainStack { get; }
 public AudioEvent SourceEvent { get; }
 public AudioContainer Container { get; }
@@ -981,98 +1249,107 @@ public int Priority { get; }
 public bool IsVirtual { get; }
 public float VirtualTime { get; }
 public double ScheduledStartTime { get; }
+public double ScheduledEndTime { get; }
 public AudioLowPassFilter LowPassFilter { get; }
+```
+
+#### Methods
+
+```csharp
+public void UpdateFinalVolume()
+public void MakeVirtual()
+public void MakeReal()
+public void UpdateVirtualTime(float deltaTime)
+public float GetImportance()
 ```
 
 ---
 
-## AudioExtensions
+### GainStack (Nested Class)
+
+```csharp
+public class GainStack
+{
+    public float BaseGain { get; set; }       // Container/Event volume
+    public float BusGain { get; set; }        // Bus hierarchy
+    public float OcclusionGain { get; set; }  // Occlusion attenuation
+    public float RtpcGain { get; set; }       // RTPC modulation
+    public float SchedulerGain { get; set; }  // Crossfade/transition
+    public float DuckingGain { get; set; }    // Ducking attenuation
+
+    public float GetFinalGain()               // Returns product of all gains
+    public void ApplyToSource(AudioSource source)
+    public void Reset()
+}
+```
+
+---
+
+## AudioExtensions & Utilities
+
+### AudioExtensions
 
 **Namespace:** `AudioSystem`
 **Type:** Static utility class
 
-### Extension Methods
+#### Extension Methods
 
-#### PlayAtPosition
 ```csharp
 public static AudioVoice PlayAtPosition(this AudioContainer container, Vector3 position)
+public static AudioVoice PlayAttached(this AudioContainer container, GameObject target)
+public static AudioVoice PlayWithVolume(this AudioContainer container, float volumeScale, Vector3 position = default)
 ```
-**Description:** Plays container at specified position.
 
 **Example:**
 ```csharp
 myContainer.PlayAtPosition(explosionPos);
-```
-
-#### PlayAttached
-```csharp
-public static AudioVoice PlayAttached(this AudioContainer container, GameObject target)
-```
-**Description:** Plays container attached to GameObject.
-
-**Example:**
-```csharp
 myContainer.PlayAttached(player);
-```
-
-#### PlayWithVolume
-```csharp
-public static AudioVoice PlayWithVolume(this AudioContainer container, float volumeScale,
-    Vector3 position = default)
-```
-**Description:** Plays container with volume multiplier.
-
-**Parameters:**
-- `volumeScale` - Volume multiplier (0-1)
-- `position` - Optional 3D position
-
-**Example:**
-```csharp
 myContainer.PlayWithVolume(0.5f, transform.position);
 ```
 
----
+#### Conversion Methods
 
-### Conversion Methods
-
-#### DbToLinear
 ```csharp
-public static float DbToLinear(float db)
+public static float DbToLinear(float db)      // 10^(db/20)
+public static float LinearToDb(float linear)   // 20 * log10(linear), or -80 if linear <= 0
+public static float CentsToPitch(float cents)  // 2^(cents/1200)
 ```
-**Description:** Converts decibels to linear volume.
-
-**Formula:** `10^(db/20)`
 
 **Example:**
 ```csharp
 float linear = AudioExtensions.DbToLinear(-6f);  // ~0.5
+float db = AudioExtensions.LinearToDb(0.5f);      // ~-6dB
+float pitch = AudioExtensions.CentsToPitch(100f); // 1.059 (1 semitone up)
 ```
 
-#### LinearToDb
+---
+
+### ListenerUtil
+
+**Namespace:** `AudioSystem`
+**Type:** Static utility class
+
 ```csharp
-public static float LinearToDb(float linear)
+public static Transform Get()
+public static Vector3 GetPosition()
+public static void Set(Transform listener)
+public static void Invalidate()
 ```
-**Description:** Converts linear volume to decibels.
 
-**Formula:** `20 * log10(linear)` (or -80 if linear ≤ 0)
+**Description:** Cached AudioListener lookup. Use to efficiently get the listener position for distance calculations.
 
-**Example:**
+---
+
+### IRTPCListener (Interface)
+
 ```csharp
-float db = AudioExtensions.LinearToDb(0.5f);  // ~-6dB
+public interface IRTPCListener
+{
+    void OnRTPCChanged(string parameter, float value);
+}
 ```
 
-#### CentsToPitch
-```csharp
-public static float CentsToPitch(float cents)
-```
-**Description:** Converts cents to pitch multiplier.
-
-**Formula:** `2^(cents/1200)`
-
-**Example:**
-```csharp
-float pitch = AudioExtensions.CentsToPitch(100f);  // 1.059 (1 semitone up)
-```
+**Description:** Implement this interface to receive RTPC change notifications. Register via `AudioManager.Instance.RegisterRTPCListener()`.
 
 ---
 
@@ -1094,89 +1371,27 @@ Central registry for AudioEvents and AudioStates. Eliminates the Resources folde
 
 ### Properties
 
-#### Instance
 ```csharp
 public static AudioEventRegistry Instance { get; }
-```
-**Description:** Singleton instance. Searches for registry in Resources, then entire project (editor only).
-
-**Returns:** The AudioEventRegistry asset, or null if not found.
-
-#### AudioEvents
-```csharp
 public IReadOnlyList<AudioEvent> AudioEvents { get; }
-```
-**Description:** All registered AudioEvents.
-
-**Returns:** Read-only list of registered events.
-
-#### AudioStates
-```csharp
 public IReadOnlyList<AudioState> AudioStates { get; }
 ```
-**Description:** All registered AudioStates.
-
-**Returns:** Read-only list of registered states.
-
----
 
 ### Methods
 
-#### RegisterEvent
 ```csharp
 public void RegisterEvent(AudioEvent audioEvent)
-```
-**Description:** Manually register an AudioEvent at runtime.
-
-**Parameters:**
-- `audioEvent` - The AudioEvent to register
-
-**Example:**
-```csharp
-var registry = AudioEventRegistry.Instance;
-registry.RegisterEvent(newEvent);
-```
-
-#### RegisterState
-```csharp
 public void RegisterState(AudioState audioState)
+public void AutoPopulateFromResources()   // Editor only
+public void AutoPopulateFromProject()     // Editor only
+public void ValidateRegistry()            // Editor only
 ```
-**Description:** Manually register an AudioState at runtime.
-
-**Parameters:**
-- `audioState` - The AudioState to register
-
-#### AutoPopulateFromResources (Editor Only)
-```csharp
-public void AutoPopulateFromResources()
-```
-**Description:** Automatically finds and registers all Events/States from Resources folders.
-
-**Usage:** Call from Inspector button or editor script.
-
-#### AutoPopulateFromProject (Editor Only)
-```csharp
-public void AutoPopulateFromProject()
-```
-**Description:** Searches entire project for Events/States and registers them.
-
-**Usage:** Call from Inspector button or editor script.
-
-#### ValidateRegistry (Editor Only)
-```csharp
-public void ValidateRegistry()
-```
-**Description:** Removes null/missing references from registry.
-
-**Usage:** Call from Inspector button to clean up registry.
-
----
 
 ### Setup Example
 
 ```csharp
 // 1. Create registry asset:
-// Right-click → Create > Audio System > Audio Event Registry
+// Right-click -> Create > Audio System > Audio Event Registry
 
 // 2. Place in: Assets/Audio/Resources/AudioEventRegistry.asset
 
@@ -1188,6 +1403,70 @@ public void ValidateRegistry()
 ```
 
 **Migration:** See [Advanced Migration Guide](5_ADVANCED_MIGRATION_GUIDE.md) for full details.
+
+---
+
+## Multi-Position Emitters
+
+### AudioMultiPositionEmitterParent
+
+**Namespace:** `AudioSystem`
+**Inheritance:** `MonoBehaviour`
+
+**Description:** Parent component that manages a group of child emitters for multi-position audio playback.
+
+#### Properties
+
+```csharp
+public MultiPositionType PositionType { get; }
+public float PositionLerpTime { get; }
+public bool UseSpreadCurve { get; }
+public float MinSpatialBlend { get; }
+public float MaxRandomOffset { get; }
+public float MaxPitchVariationCents { get; }
+public IReadOnlyList<AudioMultiPositionEmitterChild> AllEmitters { get; }
+public IReadOnlyList<AudioMultiPositionEmitterChild> ActiveEmitters { get; }
+public int ActiveEmitterCount { get; }
+public bool HasActiveEmitters { get; }
+```
+
+#### Methods
+
+```csharp
+public Vector3[] GetActivePositions()
+public Transform[] GetActiveTransforms()
+public void RefreshChildren()
+public void EnableAllEmitters()
+public void DisableAllEmitters()
+public void SetAllVolumes(float volume)
+```
+
+**Example:**
+```csharp
+var emitterParent = GetComponent<AudioMultiPositionEmitterParent>();
+AudioMultiHandle mh = myEvent.PostMultiPosition(emitterParent);
+```
+
+---
+
+### AudioMultiPositionEmitterChild
+
+**Namespace:** `AudioSystem`
+**Inheritance:** `MonoBehaviour`
+
+**Description:** Individual emitter point in a multi-position setup.
+
+#### Properties
+
+```csharp
+public bool IsActive { get; set; }
+public float VolumeMultiplier { get; set; }
+public bool UseDirectionality { get; set; }
+public float ConeAngle { get; set; }
+public Vector3 Position { get; }
+public Quaternion Rotation { get; }
+public Vector3 Forward { get; }
+```
 
 ---
 
@@ -1205,81 +1484,20 @@ public void ValidateRegistry()
 
 One-click sound setup wizard that creates Bus + Container + Event with all references pre-filled.
 
-**Purpose:**
-- Eliminate tedious multi-step workflow
-- Create complete sound setup in 2 minutes
+**Features:**
+- 5 creation modes: Complete Setup, Container Only, Event Only, Bus Only, Batch Import
+- All 5 container types supported
+- 8 preset templates
 - Auto-create folder structure
 - Validate Resources placement
 
-#### Inspector Fields
+#### Usage
 
-**Sound Configuration:**
-- `soundName` (string) - Name for the sound
-- `audioClip` (AudioClip) - The audio file to use
-- `mode` (SetupMode) - Preset: SimpleSFX, Music, UISound, Custom
-
-**Advanced Options:**
-- `createNewBus` (bool) - Create new bus or use existing
-- `busName` (string) - Name for new bus (if creating)
-- `existingBus` (AudioBus) - Existing bus reference (if not creating)
-- `volume` (float) - Container volume (0-1)
-- `loop` (bool) - Enable looping
-- `is3D` (bool) - Enable 3D spatial audio
-
-**Output Paths:**
-- `eventFolder` (string) - Where to create Event
-- `containerFolder` (string) - Where to create Container
-- `busFolder` (string) - Where to create Bus
-
-#### Methods
-
-##### CreateSoundSetup
-```csharp
-void CreateSoundSetup()
-```
-**Description:** Creates complete sound setup (Bus + Container + Event).
-
-**Process:**
-1. Creates AudioBus (or uses existing)
-2. Creates RoutingContainer with clips
-3. Creates AudioEvent in Resources folder
-4. Wires all references automatically
-5. Auto-registers in AudioEventRegistry (if exists)
-
-##### CreateStandardFolders
-```csharp
-void CreateStandardFolders()
-```
-**Description:** Auto-creates standard folder structure.
-
-**Creates:**
-```
-Assets/Audio/
-├── Resources/
-│   └── Audio/
-│       ├── Events/
-│       └── States/
-├── Containers/
-├── Buses/
-└── AudioClips/
-```
-
-#### Usage Example
-
-**From Menu:**
 1. `Window > Audio System > Quick Sound Setup Wizard`
-2. Drop AudioClip in field
+2. Drop AudioClip(s) in field
 3. Choose preset (e.g., "Simple SFX")
 4. Click "Create Complete Sound Setup"
 5. Done!
-
-**From Code (Advanced):**
-```csharp
-// Not typically needed - use menu instead
-var window = QuickSoundSetupWizard.ShowWindow();
-```
-
-💡 **Tip:** The wizard automatically detects if you've selected an AudioClip in the Project window and pre-fills it.
 
 ---
 
@@ -1299,44 +1517,6 @@ Custom Inspector for AudioEvent with automatic validation and one-click fixes.
 - One-click "Move to Resources" button
 - Console warnings on asset creation
 
-#### Validation Behavior
-
-**✅ Correct Placement:**
-```
-Assets/Audio/Resources/Audio/Events/MyEvent.asset
-```
-Shows: "✓ Correctly placed in Resources/Audio/Events/"
-
-**⚠️ Warning: In Resources but wrong subfolder:**
-```
-Assets/Audio/Resources/MyEvent.asset
-```
-Shows: Warning + "Move to Resources/Audio/Events/" button
-
-**❌ Error: Not in Resources at all:**
-```
-Assets/Audio/Events/MyEvent.asset
-```
-Shows: Critical error + "Move to Resources/Audio/Events/" button
-
-#### Methods
-
-##### MoveToResourcesFolder
-```csharp
-void MoveToResourcesFolder()
-```
-**Description:** Automatically moves AudioEvent to correct Resources location.
-
-**Target Path:** `Assets/Audio/Resources/Audio/Events/`
-
-**Process:**
-1. Creates folders if needed
-2. Moves asset via AssetDatabase
-3. Shows success dialog
-4. Logs to Console
-
-📘 **Note:** This validation is automatic - just select an AudioEvent in the Inspector to see its status.
-
 ---
 
 ### AudioEventRegistryEditor
@@ -1349,36 +1529,11 @@ void MoveToResourcesFolder()
 
 Custom Inspector for AudioEventRegistry with utility buttons and migration guide.
 
-**Features:**
-- One-click population from Resources
-- One-click population from entire project
-- Registry validation and cleanup
-- Statistics display
-- Built-in migration guide
-
-#### Inspector Buttons
-
-**Populate from Resources Folders:**
-- Finds Events/States in Resources folders
-- Registers them in registry
-- Fast for existing Resources-based projects
-
-**Populate from Entire Project:**
-- Searches entire project
-- Registers all Events/States found
-- Use when assets are not in Resources
-
-**Validate Registry (Remove Nulls):**
-- Removes missing/null references
-- Cleans up registry
-- Logs removed count
-
-**Clear All:**
-- Removes all registered assets
-- Confirmation dialog shown
-- Use before re-populating
-
-📘 **Note:** The Inspector shows real-time statistics (event count, state count) and a migration guide.
+**Buttons:**
+- **Populate from Resources Folders** - Fast for existing Resources-based projects
+- **Populate from Entire Project** - Searches entire project
+- **Validate Registry (Remove Nulls)** - Cleans up missing references
+- **Clear All** - Removes all registered assets (with confirmation)
 
 ---
 
@@ -1401,34 +1556,21 @@ public enum VoicePriority
 ```csharp
 public enum VoiceStealBehavior
 {
-    None,            // Don't steal, ignore new trigger
     Oldest,          // Steal longest-playing voice
     Quietest,        // Steal quietest voice
+    Furthest,        // Steal most distant voice
     LowestPriority   // Steal by priority only
 }
 ```
 
 ---
 
-### CrossfadeType
+### MultiPositionType
 ```csharp
-public enum CrossfadeType
+public enum MultiPositionType
 {
-    Linear,      // Linear crossfade
-    EqualPower   // Maintains perceived loudness
-}
-```
-
----
-
-### PlaybackMode
-```csharp
-public enum PlaybackMode
-{
-    Forward,   // 0→1→2→3→0...
-    Reverse,   // 3→2→1→0→3...
-    PingPong,  // 0→1→2→3→2→1→0...
-    Random     // Random order
+    SingleEmitter,  // Single voice, dynamically positioned at dominant emitter
+    Decorrelated    // All emitters play with phase decorrelation
 }
 ```
 
@@ -1440,8 +1582,8 @@ public enum PlaybackMode
 public class WeightedAudioClip
 {
     public AudioClip clip;
-    public float weight;           // Selection probability (0-10)
-    public float volumeMultiplier; // Per-clip volume (0-1)
+    public float weight = 1f;           // Selection probability (0-10)
+    public float volumeMultiplier = 1f; // Per-clip volume (0-1)
 }
 ```
 
@@ -1453,9 +1595,9 @@ public class WeightedAudioClip
 public class SequenceEntry
 {
     public AudioClip clip;
-    public float volumeMultiplier;  // Per-clip volume
-    public bool loop;                // Loop this clip
-    public float delayAfter;         // Delay before next (0-5s)
+    public float volumeMultiplier = 1f;  // Per-clip volume
+    public bool loop = false;             // Loop this clip
+    public float delayAfter = 0f;         // Delay before next (0-5s)
 }
 ```
 
@@ -1466,8 +1608,8 @@ public class SequenceEntry
 [Serializable]
 public class SwitchEntry
 {
-    public string switchValue;      // Value to match
-    public AudioContainer container; // Container to play
+    public string switchValue = "";     // Value to match
+    public AudioContainer container;     // Container to play
 }
 ```
 
@@ -1478,44 +1620,66 @@ public class SwitchEntry
 [Serializable]
 public class BlendEntry
 {
-    public AudioContainer container;    // Layer container
-    public AnimationCurve volumeCurve;  // RTPC → Volume mapping
+    public AudioContainer container;                                    // Layer container
+    public AnimationCurve volumeCurve = AnimationCurve.Linear(0,0,1,1); // RTPC -> Volume mapping
 }
 ```
 
 ---
 
-### GainStack
+### AudioStatistics
 ```csharp
-public class GainStack
+public class AudioStatistics
 {
-    public float BaseGain;       // Container/Event volume
-    public float BusGain;        // Bus hierarchy
-    public float OcclusionGain;  // Occlusion attenuation
-    public float RTPCGain;       // RTPC modulation
-    public float SchedulerGain;  // Crossfade/transition
-
-    public float GetFinalGain(); // Returns product of all gains
-}
-```
-
----
-
-### Statistics
-```csharp
-public struct Statistics
-{
-    public int realVoices;
-    public int maxRealVoices;
-    public int virtualVoices;
-    public int activeEvents;
+    public int activeVoices;
+    public int availableVoices;
+    public int totalVoices;
+    public int activeLoops;
+    public int registeredContainers;
 }
 ```
 
 **Usage:**
 ```csharp
 var stats = AudioManager.Instance.GetStatistics();
-Debug.Log($"Voices: {stats.realVoices}/{stats.maxRealVoices}");
+Debug.Log($"Voices: {stats.activeVoices}/{stats.totalVoices}");
+```
+
+---
+
+### AudioVoiceDebugInfo
+```csharp
+[Serializable]
+public class AudioVoiceDebugInfo
+{
+    public int id;
+    public string containerName;
+    public string eventName;
+    public string clipName;
+    public string busName;
+    public bool isPlaying;
+    public bool isVirtual;
+    public bool isLooping;
+    public float volume;
+    public float volumeDb;
+    public float pitch;
+    public float time;
+    public float length;
+    public float playTime;
+    public bool is3D;
+    public float distance;
+    public float distanceToListener;
+    public Vector3 position;
+    public AudioVoiceEnhanced voice;
+    public int priority;
+}
+```
+
+**Usage:**
+```csharp
+var voices = AudioManager.Instance.GetActiveVoicesDebug();
+foreach (var v in voices)
+    Debug.Log($"{v.eventName}: {v.clipName} vol={v.volume:F2} dist={v.distanceToListener:F1}m");
 ```
 
 ---
@@ -1556,16 +1720,50 @@ AudioManager.Instance.SetSwitch("Surface_Type", "Metal");
 **RTPC:**
 ```csharp
 AudioManager.Instance.SetRTPC("CombatIntensity", 0.75f);
+AudioManager.Instance.TransitionRTPC("CombatIntensity", 1.0f, 2f);
+```
+
+**Global Controls:**
+```csharp
+AudioManager.Instance.StopAllSounds();
+AudioManager.Instance.PauseAll();
+AudioManager.Instance.UnpauseAll();
+AudioManager.Instance.MuteAll(true);
 ```
 
 **Multi-Position:**
 ```csharp
-AudioMultiHandle mh = event.PostMulti(emitterParent);
+AudioMultiHandle mh = myEvent.PostMultiPosition(emitterParent);
+mh.SetVoiceVolume(0, 0.5f);  // Per-voice control
+mh.UpdatePositions(newTransforms);
 ```
 
 ---
 
 ## Version History
+
+**v2.2.0** - March 2026
+- Runtime container override system (3D settings)
+- Per-voice control on AudioMultiHandle
+- RTPC transitions with `TransitionRTPC()`
+- `StopAllSounds()`, `PauseAll()`, `UnpauseAll()`
+- `MuteAll(bool)` replaces separate Mute/Unmute methods
+- AudioStatistics replaces Statistics struct
+- VoiceStealBehavior: added `Furthest`, removed `None`
+- GainStack: added `DuckingGain`, `ApplyToSource()`, `Reset()`
+- SequenceContainer: `AutoAdvance`, `PlayNext()`
+- AudioBus: ducking system, effect sends
+- AudioState: structured property classes
+- Multi-position emitter components
+- `IRTPCListener` interface
+- `ListenerUtil` utility class
+- `AudioVoiceDebugInfo` for runtime debugging
+
+**v2.0.0** - January 2026
+- AudioEventRegistry system
+- Quick Sound Setup Wizard (5 modes, 8 presets)
+- AudioEvent Inspector validation
+- Batch import support
 
 **v1.0** - Initial release
 - Complete audio middleware system
@@ -1583,8 +1781,8 @@ AudioMultiHandle mh = event.PostMulti(emitterParent);
 
 ---
 
-*For tutorials, see COOKBOOK.md*
-*For deep knowledge, see MANUAL.md*
-*For quick start, see QUICK_START.md*
+*For tutorials, see [COOKBOOK.md](2_COOKBOOK.md)*
+*For deep knowledge, see [MANUAL.md](3_MANUAL.md)*
+*For quick start, see [QUICK_START.md](1_QUICK_START.md)*
 
-*SFX System v1.2.0 - Professional Audio Middleware for Unity*
+*SFX System v2.2.0 - Professional Audio Middleware for Unity*

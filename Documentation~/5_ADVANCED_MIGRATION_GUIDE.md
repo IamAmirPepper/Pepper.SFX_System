@@ -1,8 +1,8 @@
 # Advanced Migration Guide - Eliminate Resources Folder Requirement
 
-**Version:** 2.1.3
+**Version:** 2.2.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** January 2026
+**Last Updated:** March 2026
 
 **Level:** Advanced • **Time:** 10-15 minutes • **Optional but Recommended**
 

@@ -1,8 +1,8 @@
 # SFX System Cookbook
 
-**Version:** 2.1.3
+**Version:** 2.2.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** January 2026
+**Last Updated:** March 2026
 
 **Practical step-by-step recipes for common audio tasks**
 
@@ -1665,7 +1665,7 @@ public class NightclubAudio : MonoBehaviour
     {
         if (musicEvent != null && emitterParent != null)
         {
-            musicHandle = musicEvent.PostMulti(emitterParent);
+            musicHandle = musicEvent.PostMultiPosition(emitterParent);
 
             Debug.Log($"Playing music on {musicHandle.VoiceCount} speakers");
         }
@@ -1762,22 +1762,22 @@ public class AudioDebugHUD : MonoBehaviour
         y += lineHeight + 5;
 
         GUI.Label(new Rect(10, y, 500, lineHeight),
-            $"Real Voices: {stats.realVoices} / {stats.maxRealVoices}",
+            $"Active Voices: {stats.activeVoices} / {stats.totalVoices}",
             style);
         y += lineHeight;
 
         GUI.Label(new Rect(10, y, 500, lineHeight),
-            $"Virtual Voices: {stats.virtualVoices}",
+            $"Available Voices: {stats.availableVoices}",
             style);
         y += lineHeight;
 
         GUI.Label(new Rect(10, y, 500, lineHeight),
-            $"Total Active: {stats.realVoices + stats.virtualVoices}",
+            $"Active Loops: {stats.activeLoops}",
             style);
         y += lineHeight;
 
         // Voice usage bar
-        float usagePercent = (float)stats.realVoices / stats.maxRealVoices;
+        float usagePercent = (float)stats.activeVoices / stats.totalVoices;
         DrawUsageBar(new Rect(10, y, 300, 20), usagePercent);
         y += 30;
 
@@ -1928,8 +1928,9 @@ AudioManager.Instance.SetRTPC("CombatIntensity", 0.75f);
 
 **Multi-Position:**
 ```csharp
-AudioMultiHandle mh = event.PostMulti(emitterParent);
+AudioMultiHandle mh = myEvent.PostMultiPosition(emitterParent);
 mh.SetVolume(0.8f);
+mh.SetVoiceVolume(0, 0.5f);  // Per-voice control
 mh.Stop(2f);
 ```
 

@@ -1,8 +1,8 @@
 # SFX System - Quick Start Guide
 
-**Version:** 2.1.3
+**Version:** 2.2.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** January 2026
+**Last Updated:** March 2026
 
 **Get your first sound playing in 2-10 minutes**
 
@@ -361,6 +361,15 @@ handle.SetVolume(0.75f);
 handle.SetPitch(semitones: 2f);
 ```
 
+**Global controls:**
+```csharp
+AudioManager.Instance.StopAllSounds();
+AudioManager.Instance.PauseAll();
+AudioManager.Instance.UnpauseAll();
+AudioManager.Instance.MuteAll(true);   // mute
+AudioManager.Instance.MuteAll(false);  // unmute
+```
+
 **Bus control:**
 ```csharp
 AudioManager.Instance.SetBusVolume("Music", volumeDb: -6f, transitionTime: 1f);
@@ -369,6 +378,12 @@ AudioManager.Instance.SetBusVolume("Music", volumeDb: -6f, transitionTime: 1f);
 **State changes:**
 ```csharp
 AudioManager.Instance.SetState("Underwater", transitionTime: 1.5f);
+```
+
+**RTPC with transitions:**
+```csharp
+AudioManager.Instance.SetRTPC("CombatIntensity", 0.75f);
+AudioManager.Instance.TransitionRTPC("CombatIntensity", 1.0f, duration: 2f);
 ```
 
 ---

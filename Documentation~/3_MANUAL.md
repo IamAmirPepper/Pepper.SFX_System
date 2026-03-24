@@ -1,8 +1,8 @@
 # SFX System - Complete Technical Manual
 
-**Version:** 2.1.3
+**Version:** 2.2.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** January 2026
+**Last Updated:** March 2026
 
 ---
 
@@ -384,13 +384,17 @@ public class GainStack
     public float BaseGain = 1f;       // Container/Event base volume
     public float BusGain = 1f;        // Bus hierarchy contribution
     public float OcclusionGain = 1f;  // Raycast-based attenuation
-    public float RTPCGain = 1f;       // RTPC-driven modulation
+    public float RtpcGain = 1f;       // RTPC-driven modulation
     public float SchedulerGain = 1f;  // Crossfade/transition gain
+    public float DuckingGain = 1f;    // Ducking attenuation
 
     public float GetFinalGain()
     {
-        return BaseGain * BusGain * OcclusionGain * RTPCGain * SchedulerGain;
+        return BaseGain * BusGain * OcclusionGain * RtpcGain * SchedulerGain * DuckingGain;
     }
+
+    public void ApplyToSource(AudioSource source) { ... }
+    public void Reset() { ... }
 }
 ```
 
@@ -399,7 +403,8 @@ Each system can independently control volume without knowing about others:
 - Container sets BaseGain
 - Bus hierarchy sets BusGain
 - Occlusion system sets OcclusionGain
-- RTPC system sets RTPCGain
+- RTPC system sets RtpcGain
+- Ducking system sets DuckingGain
 - Crossfade/scheduler sets SchedulerGain
 
 **Example:**
@@ -407,10 +412,11 @@ Each system can independently control volume without knowing about others:
 BaseGain:       1.0   (container volume)
 BusGain:        0.707 (bus at -3dB)
 OcclusionGain:  0.5   (partially occluded)
-RTPCGain:       0.8   (RTPC lowering volume)
+RtpcGain:       0.8   (RTPC lowering volume)
+DuckingGain:    1.0   (no ducking active)
 SchedulerGain:  0.9   (fading in)
 
-FinalGain = 1.0 * 0.707 * 0.5 * 0.8 * 0.9 = 0.254
+FinalGain = 1.0 * 0.707 * 0.5 * 0.8 * 0.9 * 1.0 = 0.254
 ```
 
 #### Voice Priority System
@@ -427,11 +433,12 @@ public enum VoicePriority
 ```
 
 **Voice Stealing:**
-When `realVoices.Count > maxRealVoices`, system steals based on:
+When voice count exceeds the pool limit, the system steals based on an importance score combining distance, volume, and priority:
 1. Priority (steal lowest first)
 2. If tied, use VoiceStealBehavior:
    - **Oldest:** Steal voice playing longest
    - **Quietest:** Steal quietest voice
+   - **Furthest:** Steal most distant voice
    - **LowestPriority:** Only steal by priority
 
 **Critical Voices:**
@@ -548,23 +555,42 @@ handle.Stop(1f);         // Fade out over 1 second
 ```csharp
 public class AudioMultiHandle
 {
+    // Properties
     public int VoiceCount { get; }
-    public bool IsPlaying { get; }
+    public bool HasVoices { get; }
+    public bool isPlaying { get; }
+    public MultiPositionType PositionType { get; }
 
-    public void SetVolume(float linear)     // Apply to all voices
-    public void SetPitch(float semitones)   // Apply to all voices
-    public void Stop(float fadeTime = 0.1f) // Stop all voices
-    public void StopImmediate()             // Stop immediately
-    public void Pause()                     // Pause all voices
-    public void Resume()                    // Resume all voices
+    // Global control (all voices)
+    public void SetVolume(float linear)
+    public void SetPitch(float semitones)
+    public void Stop(float fadeTime = 0.1f)
+    public void Pause()
+    public void Resume()
+
+    // Per-voice control
+    public void SetVoiceVolume(int voiceIndex, float volumeMultiplier)
+    public void SetVoicePitch(int voiceIndex, float semitones)
+    public void StopVoice(int voiceIndex, float fadeTime = 0.1f)
+    public void PauseVoice(int voiceIndex)
+    public void ResumeVoice(int voiceIndex)
+
+    // Position management
+    public void UpdatePositions(Vector3[] newPositions)
+    public void UpdatePositions(Transform[] newTransforms)
+    public void RefreshPositions()
+    public Vector3? GetVoicePosition(int voiceIndex)
+    public Vector3[] GetAllPositions()
 }
 ```
 
 **Usage:**
 ```csharp
-AudioMultiHandle multiHandle = event.PostMulti(emitterParent);
+AudioMultiHandle multiHandle = myEvent.PostMultiPosition(emitterParent);
 Debug.Log($"Playing on {multiHandle.VoiceCount} speakers");
-multiHandle.SetVolume(0.75f); // All speakers to 75% volume
+multiHandle.SetVolume(0.75f);            // All speakers to 75% volume
+multiHandle.SetVoiceVolume(0, 0.5f);     // First speaker to 50%
+multiHandle.UpdatePositions(newTransforms); // Update positions dynamically
 ```
 
 ---
@@ -844,10 +870,11 @@ Example: Common phrases weight = 5, rare phrases weight = 1
 #### Properties
 
 ```csharp
-List<SequenceEntry> Entries { get; }    // Ordered clip list
-PlaybackMode Mode { get; }               // Forward/Reverse/PingPong/Random
-bool LoopSequence { get; }               // Loop entire sequence
-float Volume { get; }                     // Base volume
+List<SequenceEntry> Entries { get; }                       // Ordered clip list
+SequenceContainer.PlaybackMode SequencePlaybackMode { get; } // Forward/Reverse/PingPong/Random
+bool LoopSequence { get; }                                   // Loop entire sequence
+bool AutoAdvance { get; set; }                               // Auto-advance after clip finishes
+float Volume { get; }                                        // Base volume
 ```
 
 #### SequenceEntry Structure
@@ -960,6 +987,11 @@ public void ResetSequence()
 public void SetIndex(int index)
 {
     currentIndex = Mathf.Clamp(index, 0, Entries.Count - 1);
+}
+
+public AudioVoice PlayNext(Vector3 position = default, GameObject parent = null)
+{
+    // Advances the sequence and plays the next entry
 }
 ```
 
@@ -1361,12 +1393,6 @@ Action [1]:
 
 #### Steal Behaviors
 
-**None:**
-```
-Behavior: If max reached, new trigger is ignored
-Use For: Sounds that should never overlap (dialogue)
-```
-
 **Oldest:**
 ```
 Behavior: Stop oldest voice, play new one
@@ -1377,6 +1403,12 @@ Use For: Most sounds (footsteps, weapons)
 ```
 Behavior: Stop quietest voice, play new one
 Use For: Sounds where loudness matters (explosions)
+```
+
+**Furthest:**
+```
+Behavior: Stop most distant voice, play new one
+Use For: Spatial sounds where proximity matters (ambience, 3D SFX)
 ```
 
 **LowestPriority:**
@@ -1405,10 +1437,7 @@ public AudioHandle PostEvent(string eventName, GameObject parent, Vector3 positi
 
         if (voices.Count >= evt.MaxInstances)
         {
-            if (evt.StealBehavior == VoiceStealBehavior.None)
-                return null; // Don't play
-
-            // Steal voice
+            // Steal voice based on configured behavior
             var voiceToSteal = SelectVoiceToSteal(voices, evt.StealBehavior);
             voiceToSteal.Stop(0.05f);
             voices.Remove(voiceToSteal);
@@ -1464,7 +1493,7 @@ Prevents audio spam and performance issues
 #### How It Works
 
 ```csharp
-public AudioMultiHandle PostMulti(AudioMultiPositionEmitterParent parent)
+public AudioMultiHandle PostMultiPosition(AudioMultiPositionEmitterParent emitterParent, GameObject source = null)
 {
     if (!enableMultiPosition)
     {
@@ -1966,7 +1995,7 @@ public class NightclubAudio : MonoBehaviour
     void Start()
     {
         var parent = GetComponent<AudioMultiPositionEmitterParent>();
-        musicHandle = musicEvent.PostMulti(parent);
+        musicHandle = musicEvent.PostMultiPosition(parent);
 
         Debug.Log($"Playing on {musicHandle.VoiceCount} speakers");
     }
@@ -2101,9 +2130,9 @@ public enum VoicePriority
 ```csharp
 public enum VoiceStealBehavior
 {
-    None,            // Don't play if max reached
     Oldest,          // Steal longest-playing voice
     Quietest,        // Steal quietest voice
+    Furthest,        // Steal most distant voice
     LowestPriority   // Steal by priority only
 }
 ```
@@ -2146,8 +2175,8 @@ void OnGUI()
 {
     var stats = AudioManager.Instance.GetStatistics();
     GUI.Label(new Rect(10, 10, 400, 20),
-        $"Real: {stats.realVoices}/{stats.maxRealVoices}, " +
-        $"Virtual: {stats.virtualVoices}");
+        $"Real: {stats.activeVoices}/{stats.totalVoices}, " +
+        $"Virtual: {stats.availableVoices}");
 }
 ```
 
@@ -2415,11 +2444,11 @@ public class AudioDebugUI : MonoBehaviour
         int y = 10;
 
         GUI.Label(new Rect(10, y, 400, 20),
-            $"Real Voices: {stats.realVoices}/{stats.maxRealVoices}");
+            $"Real Voices: {stats.activeVoices}/{stats.totalVoices}");
         y += 20;
 
         GUI.Label(new Rect(10, y, 400, 20),
-            $"Virtual Voices: {stats.virtualVoices}");
+            $"Virtual Voices: {stats.availableVoices}");
         y += 20;
 
         GUI.Label(new Rect(10, y, 400, 20),
@@ -3183,10 +3212,10 @@ Check event Inspector
 Multi-Position Mode checkbox
 ```
 
-2. **Using PostMulti()?**
+2. **Using PostMultiPosition()?**
 ```csharp
 // CORRECT
-event.PostMulti(emitterParent);
+event.PostMultiPosition(emitterParent);
 
 // WRONG
 event.Post();  // Normal mode, no sync
@@ -3294,7 +3323,7 @@ AudioManager.Instance.SetRTPC("CombatIntensity", 0.75f);
 
 **Multi-Position:**
 ```csharp
-AudioMultiHandle multiHandle = event.PostMulti(emitterParent);
+AudioMultiHandle multiHandle = event.PostMultiPosition(emitterParent);
 ```
 
 ---

@@ -1,5 +1,10 @@
-# Changelog
-## [2.2.0] - 2026-03-24
+# Workflow Improvements - Technical Changelog
+
+**Version:** 2.2.0
+**Unity Compatibility:** 6000.0.48f1 and above
+**Last Updated:** March 2026
+
+**Audience:** Contributors, Technical Leads, Advanced Users
 
 This document outlines all improvements made to address user feedback about workflow confusion and tedious setup processes.
 
@@ -491,4 +496,3 @@ For questions or suggestions, see existing documentation:
 - [Migration Guide](MIGRATION_GUIDE.md)
 - [Full Manual](3_MANUAL.md)
 - [Cookbook](2_COOKBOOK.md)
-###
