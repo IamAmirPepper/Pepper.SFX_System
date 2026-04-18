@@ -1,12 +1,83 @@
 # Workflow Improvements - Technical Changelog
 
-**Version:** 2.2.0
+**Version:** 2.3.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** March 2026
+**Last Updated:** April 2026
 
 **Audience:** Contributors, Technical Leads, Advanced Users
 
 This document outlines all improvements made to address user feedback about workflow confusion and tedious setup processes.
+
+---
+
+## Version 2.3.0 - Ambient Propagation Subsystem (April 2026)
+
+### New Subsystem: `AudioSystem.Propagation`
+
+Zone/portal graph-based routing for long-running ambient beds (rain, wind, machinery, crowd murmur). Solves the "rain heard through a closed door should come *from the door*, muffled and quiet" problem that standard 3D audio and single-raycast occlusion cannot express.
+
+**Additive design:** The propagation subsystem ships inside the SFX_System package but does not modify or couple to the SFX event pipeline. Both systems share the same `AudioManager`, the same mixer group hierarchy, and the same `AudioListener`. SFX events continue to handle discrete sounds; propagation handles the persistent acoustic background.
+
+### Components
+
+- **`AudioZone`** (MonoBehaviour) — tags a volume as an acoustic room. Supports multiple BoxColliders for L-shapes via OR-union. `ContainsPoint` and `ClosestSurfacePoint` are `virtual` for future sphere/mesh subclasses.
+- **`AudioPortal`** (MonoBehaviour) — edge between two zones. Drives transmission (dB-interpolated) and low-pass cutoff (log-frequency-interpolated) from an optional `IPortalDoorSource.OpenProgress`. Doubles as the listener blend region for pop-free doorway crossings.
+- **`AmbientSource`** (MonoBehaviour) — declares "there is an ambient bed in this zone with this clip." Does not play audio directly.
+- **`AmbientEmitter`** (MonoBehaviour, pooled) — persistent looping voice positioned at whatever portal the listener is hearing a source through. Bypasses the SFX voice pool by design (avoids double-filtering with `OcclusionPerf`), but routes through the designated Ambience mixer group so bus ducking and master fades still apply.
+- **`PropagationManager`** (singleton) — owns zone/portal/source registries, the Dijkstra solver, the per-source emitter pool (active + fading slots), and per-frame smoothing. Auto-instantiates on first reference.
+- **`AudioListenerZoneTracker`** — attached to the listener. Auto-adds a kinematic Rigidbody if needed (required for Unity trigger events on static zone/portal colliders).
+- **`PropagationProximityCuller`** — trims the active solver graph by listener distance. Per-node `activationRadius` + global hard caps (64 zones / 128 portals). First tick forced to run immediately to avoid startup silence.
+- **`IPortalDoorSource`** — minimal portable door interface (`OpenProgress` + `OnChanged` event). Any MonoBehaviour can implement it; project-specific door systems bridge via thin adapters.
+
+### Solver
+
+- Pure Dijkstra over the active zone graph with allocation-free `Buffers` passed in by the manager.
+- Edge cost: `-20 * log10(transmission) + distancePenaltyDbPerMeter * distance`. Additive-in-dB because transmission multipliers compose multiplicatively in amplitude space.
+- Cutoff aggregation: MIN across all portals on the path (cascaded low-passes are dominated by the tightest filter).
+- Default solve rate 8 Hz; per-frame emitter smoothing handles the in-between.
+- Blend region active (listener inside a portal trigger) → solves twice and blends in dB / log-Hz / linear-world-position.
+
+### Authoring Workflow
+
+1. Empty GameObject → `BoxCollider` (isTrigger forced on via `OnValidate`) → Add `Audio/Propagation/Audio Zone`
+2. Empty GameObject at doorway → `BoxCollider` → Add `Audio/Propagation/Audio Portal` → drag zones
+3. Empty GameObject → `Audio/Propagation/Ambient Source` → assign zone, clip, mixer group
+4. On the listener GameObject → `Audio/Propagation/Audio Listener Zone Tracker`
+
+`OnValidate` enforces: trigger colliders, non-null zones on portals, ≥ 5 cm portal↔zone overlap, sensible transmission/cutoff polarity.
+
+### Bug fixes applied pre-release
+
+During implementation, 10 real bugs were found and fixed via self-review:
+1. Edit-mode singleton auto-creation (phantom `[PropagationManager]` GameObject during inspector edits)
+2. Blend-region axis ambiguity (added `DetectPositiveAxisIsZoneB` + `GetZoneAtBlendFactorZero/One`)
+3. Listener starting inside a zone never registered (added `ScanListenerMembership`)
+4. Pool-swap pop from `ReleaseImmediate` on still-audible fading slot (added `fadingBusy` guard)
+5. Wasted emitter allocation when target is silent (added `InaudibleThreshold` early-return)
+6. Dominant-portal flip at blend=0.5 (now uses stable `blendPortal` throughout blend region)
+7. `AmbientEmitter.SetTarget` stale `fadingOutForRelease` flag → premature recycle (now cleared on audible retarget)
+8. `ScanListenerMembership` pushed zones in undefined HashSet order → wrong top-of-stack for nested zones (now sorts by volume descending)
+9. Solve bootstrap undid culler's cull decisions (now gated on `!culler.Enabled`)
+10. Culler delayed first tick by up to 10 frames → startup silence dip (now forces first tick)
+
+### Documentation
+
+- Quick Start: new "Ambient Propagation" section with 2-minute setup
+- Cookbook: new "Ambient Propagation" section with 4 recipes (rain + window, door + animator, L-shaped room, weather intensity) + troubleshooting
+- Manual: new Chapter 13 covering architecture, solver math, blend-region crossfading, emitter pool design, scale, and known limits
+- API Reference: full coverage of 7 public types in `AudioSystem.Propagation`
+- Inline XML docs on every public member in the propagation namespace
+
+### Non-goals (out of v2.3.0 scope)
+
+- Multi-path simultaneous playback (single best path only)
+- True raycast-based diffraction or obstruction on the propagation path (out of scope; use SFX-side `OcclusionPerf` for clutter)
+- Auto-portal detection via `OverlapBox`
+- Per-zone reverb / wet-dry
+- Hysteresis / dwell-time zone commitment
+- SFX events participating in propagation
+- Custom inspector / scene gizmos beyond `OnValidate` warnings
+- Unit tests (`PropagationSolver` is pure and testable in phase 2)
 
 ---
 

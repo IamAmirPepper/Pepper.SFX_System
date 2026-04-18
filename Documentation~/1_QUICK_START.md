@@ -1,8 +1,8 @@
 # SFX System - Quick Start Guide
 
-**Version:** 2.2.0
+**Version:** 2.3.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** March 2026
+**Last Updated:** April 2026
 
 **Get your first sound playing in 2-10 minutes**
 
@@ -437,6 +437,54 @@ AudioManager.Instance.TransitionRTPC("CombatIntensity", 1.0f, duration: 2f);
 3. **One AudioManager per project** - It persists between scenes
 4. **Buses use dB** - 0 dB = no change, -6 dB ≈ half as loud, -80 dB = silence
 5. **Voice limit** - 32 real voices by default (configurable)
+
+---
+
+## 🆕 Ambient Propagation (v2.3.0)
+
+The SFX System now ships with an **optional** zone/portal-based ambient propagation subsystem. Use it when you want ambient beds (rain, wind, machinery) to route *through geometry* — muffled through a closed door, swelling as it opens, heard *from the window* when the listener is in another room.
+
+Propagation is **additive** — it doesn't touch the SFX event pipeline you just learned. Skip this section if your project only plays discrete SFX.
+
+### 2-Minute Setup
+
+```
+1. Create empty GameObject → BoxCollider (isTrigger forced on) → Add "Audio/Propagation/Audio Zone"
+   → Size collider to fit the room. Repeat for each acoustic space.
+
+2. Create empty GameObject at a doorway → BoxCollider → Add "Audio/Propagation/Audio Portal"
+   → Drag the two adjacent AudioZones into ZoneA and ZoneB.
+
+3. Create empty GameObject inside the source zone → Add "Audio/Propagation/Ambient Source"
+   → Assign Source Zone, Looping Clip, and Ambience Mixer Group.
+
+4. On your AudioListener GameObject → Add "Audio/Propagation/Audio Listener Zone Tracker".
+   (A kinematic Rigidbody is auto-added if needed for trigger events.)
+```
+
+That's it. The `PropagationManager` auto-instantiates on first reference. Walk through the doorway and you'll hear the bed transition smoothly between zones.
+
+### Door-Driven Transmission
+
+To let a door swing affect audio, implement `IPortalDoorSource` on any MonoBehaviour:
+
+```csharp
+using AudioSystem.Propagation;
+
+public class MyDoor : MonoBehaviour, IPortalDoorSource
+{
+    public float OpenProgress => animator.GetFloat("openAmount"); // 0..1
+    public event System.Action OnChanged;
+}
+```
+
+Drag it into the portal's `Door Source` field. Closed → `closedTransmission` amplitude + `closedLowPassHz` filtering; open → the base values. Interpolation is continuous — no discrete snap.
+
+### Where to Learn More
+
+- **Cookbook** → [Ambient Propagation recipes](2_COOKBOOK.md#ambient-propagation)
+- **Manual** → [Chapter 13: Ambient Propagation Subsystem](3_MANUAL.md#13-ambient-propagation-subsystem)
+- **API Reference** → [Propagation](4_API_REFERENCE.md#propagation)
 
 ---
 

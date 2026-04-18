@@ -1,8 +1,8 @@
 # SFX System Cookbook
 
-**Version:** 2.2.0
+**Version:** 2.3.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** March 2026
+**Last Updated:** April 2026
 
 **Practical step-by-step recipes for common audio tasks**
 
@@ -34,6 +34,7 @@ Each recipe is **self-contained and copy-paste ready**. Find what you need, foll
 7. [States & RTPCs](#states--rtpcs)
 8. [Multi-Position Audio](#multi-position-audio)
 9. [Performance & Debugging](#performance--debugging)
+10. [Ambient Propagation](#ambient-propagation)
 
 ---
 
@@ -1886,6 +1887,220 @@ public class AudioEventLogger : MonoBehaviour
 
 ---
 
+## Ambient Propagation
+
+**New in v2.3.0.** Zone/portal routing for long-running ambient beds (rain, wind, machinery, river). The propagation subsystem ships *alongside* the SFX event pipeline — both systems coexist on the same AudioManager and mixer. Use SFX events for discrete sounds, propagation for persistent environmental beds that need to route through geometry.
+
+**Prerequisites before these recipes:**
+- A scene with an `AudioManager` + `AudioListener`
+- The `Ambience` mixer group (or any `AudioMixerGroup` you want ambient beds routed through — propagation does not bypass your mix bus)
+- The listener GameObject has an `Audio/Propagation/Audio Listener Zone Tracker` component
+
+---
+
+### Recipe: Rain That Leaks Through a Window
+
+📋 **What:** Outdoor rain audible inside a room only through an open window — quieter, dull, and panned toward the window as the listener walks along the opposite wall.
+
+🎯 **Use Case:** Any ambient bed originating outside a closed interior — weather, traffic, a distant waterfall.
+
+#### Scene Setup
+
+**1. Two AudioZones:**
+- `Zone_Outdoors` — huge BoxCollider enveloping the outdoor space
+- `Zone_LivingRoom` — BoxCollider filling the room interior
+- On each: Add → `Audio/Propagation/Audio Zone`
+- For the outdoor zone, set `activationRadius = Infinity` (so the source doesn't get culled when the player is deep inside the house)
+
+**2. One AudioPortal at the window:**
+- Empty GameObject at the window frame
+- BoxCollider sized ~1m × 1.2m × 0.4m spanning the opening
+- Add → `Audio/Propagation/Audio Portal`
+- Drag `Zone_Outdoors` into `ZoneA`, `Zone_LivingRoom` into `ZoneB`
+- Orient the GameObject so its **+Z points through the opening**
+- Inspector settings:
+  - `Base Transmission = 0.6` (open window ≈ -4 dB)
+  - `Closed Transmission = 0.1` (≈ -20 dB; doesn't matter if Door Source is null)
+  - `Open Low Pass Hz = 12000`
+  - `Closed Low Pass Hz = 600`
+  - Leave `Door Source` **null** — windows don't swing
+
+**3. The rain source:**
+- Empty GameObject anywhere outside (say, above the house roof)
+- Add → `Audio/Propagation/Ambient Source`
+- Inspector:
+  - `Source Zone = Zone_Outdoors`
+  - `Looping Clip = Rain_Heavy_Loop.wav` (must be loop-authored!)
+  - `Ambience Mixer Group = Ambience` (any mixer group you like)
+  - `Source Base Volume Db = 0`
+
+#### Code
+
+None needed. The subsystem self-boots:
+- `PropagationManager` auto-instantiates on the first `AudioZone.OnEnable`
+- The listener tracker enters/exits zones on trigger crossings
+- The solver runs at 8 Hz and drives the pooled `AmbientEmitter`
+
+✅ **Result:**
+- Standing outside → rain plays flat at 0 dB, no filtering
+- Walking indoors → rain muffles down to ~-20 dB, high-frequency content rolled off by the window
+- As you walk past the window wall, the virtual emitter slides along the frame so the rain pans naturally
+
+---
+
+### Recipe: Door That Swings Between Muffled and Clear
+
+📋 **What:** A bedroom door connecting a hallway to the street. As the door animates open/closed, propagation parameters interpolate smoothly in real time.
+
+🎯 **Use Case:** Any door (physical or magical) that can change state during gameplay.
+
+#### Scene Setup
+
+**1. Three zones** (same pattern as above): `Zone_Street`, `Zone_Hallway`, `Zone_Bedroom`.
+
+**2. Two portals:**
+- Portal at the bedroom door → connects `Zone_Hallway` ↔ `Zone_Bedroom`, **has a Door Source**
+- Portal at the front entrance → connects `Zone_Street` ↔ `Zone_Hallway`, can have its own Door Source or be null
+
+**3. The door adapter:** Propagation doesn't know about your door system. Write a thin adapter that exposes `OpenProgress` and fires `OnChanged` when the state changes:
+
+```csharp
+using System;
+using UnityEngine;
+using AudioSystem.Propagation;
+
+[RequireComponent(typeof(Animator))]
+public class AnimatorDoorToPortal : MonoBehaviour, IPortalDoorSource
+{
+    [SerializeField] private string openParameterName = "openAmount";
+
+    private Animator animator;
+    private float lastReported = -1f;
+
+    public float OpenProgress => animator != null
+        ? Mathf.Clamp01(animator.GetFloat(openParameterName))
+        : 0f;
+
+    public event Action OnChanged;
+
+    void Awake() => animator = GetComponent<Animator>();
+
+    void Update()
+    {
+        // Only fire OnChanged on meaningful deltas — the portal re-solves
+        // immediately whenever we raise this event, so don't spam every frame.
+        float now = OpenProgress;
+        if (Mathf.Abs(now - lastReported) >= 0.02f)
+        {
+            lastReported = now;
+            OnChanged?.Invoke();
+        }
+    }
+}
+```
+
+**4. Hook it up:** Drop the `AnimatorDoorToPortal` component on whatever GameObject drives your door (usually the door model root). Drag it into the bedroom `AudioPortal`'s `Door Source` field.
+
+#### Code
+
+```csharp
+// Nothing — the door animation alone drives audio.
+// If you want to script-toggle the door:
+void OpenDoor()  => GetComponent<Animator>().SetBool("open", true);
+void CloseDoor() => GetComponent<Animator>().SetBool("open", false);
+```
+
+✅ **Result:**
+- Door closed → bedroom sits at near-silent muffled roar (~-26 dB + 600 Hz low-pass applied to the already-filtered path)
+- Door animates open → transmission and cutoff interpolate every frame the animator changes `openAmount`
+- Door slams closed mid-step → smooth attenuation, no pops
+
+**Gotcha:** If your animator parameter is stepped (0/1 only), the portal transitions will still be smooth on the audio side thanks to per-frame emitter smoothing — but they'll be less perceptually natural than an animation that ramps. Prefer a continuous float parameter on the animator when possible.
+
+---
+
+### Recipe: L-Shaped Room with Multiple Colliders
+
+📋 **What:** A corridor that bends at a right angle, or a room with an alcove. Single BoxCollider won't cover the shape cleanly.
+
+🎯 **Use Case:** Any non-rectangular acoustic space.
+
+#### Scene Setup
+
+1. On the AudioZone GameObject, **add multiple BoxCollider components** (one for each leg of the L, each with `isTrigger = true`)
+2. Size them to cover the real interior. A small overlap at the corner is fine — `ContainsPoint` is OR-across all colliders
+3. Do NOT add multiple `AudioZone` components; just more colliders on the same GameObject
+
+```
+GameObject "Zone_LShapedCorridor"
+  ├─ AudioZone               (single component)
+  ├─ BoxCollider (horizontal leg)
+  └─ BoxCollider (vertical leg)
+```
+
+✅ **Result:** The zone behaves as one logical room. Authoring error detection (`OnValidate`) treats all triggers uniformly. Portals that overlap *any* of the zone's colliders are accepted.
+
+**Future-proofing:** `AudioZone.ContainsPoint` and `ClosestSurfacePoint` are `virtual` — if you later need sphere or mesh shapes, subclass `AudioZone` and override those two methods. No changes to the solver or manager required.
+
+---
+
+### Recipe: Weather Intensity Drives Rain Volume
+
+📋 **What:** A `Weather_RainIntensity` global value (0..1) smoothly crossfades the rain bed from silent to 0 dB.
+
+🎯 **Use Case:** Dynamic weather systems, seasonal changes, gameplay intensity scaling.
+
+#### Code
+
+```csharp
+using UnityEngine;
+using AudioSystem.Propagation;
+
+public class RainIntensityDriver : MonoBehaviour
+{
+    [SerializeField] private AmbientSource rainSource;
+    [Range(-60f, 0f)] [SerializeField] private float quietDb = -40f;
+    [Range(-60f, 0f)] [SerializeField] private float loudDb  = 0f;
+
+    /// <summary>Call this from your weather / gameplay system. 0..1.</summary>
+    public void SetRainIntensity(float t)
+    {
+        if (rainSource == null) return;
+        float db = Mathf.Lerp(quietDb, loudDb, Mathf.Clamp01(t));
+        rainSource.SetBaseVolumeDb(db);
+    }
+}
+```
+
+The base volume is picked up on the next solve tick (8 Hz default). Propagation attenuation is subtracted from it, so lowering base volume during a lull will still produce the correct filtered-and-quieter result through doorways.
+
+✅ **Result:** One knob → rain swells or fades globally, while all of the per-portal routing, blending, and filtering stays correct.
+
+---
+
+### Troubleshooting
+
+**"Rain sounds full-volume indoors."**
+- Check the portal's `+Z` points through the opening. If the portal's forward is parallel to the wall, the blend axis is wrong.
+- Inspector error on the portal GameObject? Zone colliders must overlap the portal collider by ≥ 5 cm.
+
+**"I hear a pop when crossing a doorway."**
+- Clip isn't loop-authored. The emitter is set to `loop = true` — Unity won't fix a boundary click in the clip itself. Edit the clip, crossfade the seams.
+
+**"No sound at all — AudioZones are registered but silent."**
+- Did you add the `Audio Listener Zone Tracker` to your AudioListener? Without it, the listener's zone is always null.
+- Confirm the `Ambience Mixer Group` isn't muted or at -∞ dB.
+- Check the `activationRadius` on your source zone. Outdoor source zones should usually use `float.PositiveInfinity`.
+
+**"Opening the door doesn't change anything."**
+- Your `IPortalDoorSource` implementation needs to fire `OnChanged`. Without it, portals poll via the solve tick (8 Hz max latency); with it, solves run immediately on state change.
+
+**"The listener spawns inside a room and hears nothing until they walk out and back in."**
+- Make sure the listener GameObject has a Rigidbody (the tracker auto-adds a kinematic one) and the zone collider's `isTrigger = true` (the zone's `OnValidate` enforces this).
+- Propagation scans for listener membership on first frame — if that still misses, it's likely a layer/collision-matrix issue.
+
+---
+
 ## Appendix: Quick Reference
 
 ### Common Tasks Cheat Sheet
@@ -1944,4 +2159,4 @@ mh.Stop(2f);
 *For API documentation, see API_REFERENCE.md*
 *For quick start, see QUICK_START.md*
 
-*SFX System v1.2.0 - Professional Audio Middleware for Unity*
+*SFX System v2.3.0 - Professional Audio Middleware for Unity*

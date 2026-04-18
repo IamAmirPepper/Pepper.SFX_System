@@ -1,10 +1,10 @@
 # SFX System - API Reference
 
-**Version:** 2.2.0
+**Version:** 2.3.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** March 2026
+**Last Updated:** April 2026
 
-**Complete API documentation for SFX System v2.2.0**
+**Complete API documentation for SFX System v2.3.0**
 
 ---
 
@@ -25,7 +25,16 @@
     - [QuickSoundSetupWizard](#quicksoundsetupwizard)
     - [AudioEventEditor](#audioeventeditor)
     - [AudioEventRegistryEditor](#audioeventregistryeditor)
-13. [Enums & Data Structures](#enums--data-structures)
+13. [Propagation](#propagation)
+    - [PropagationManager](#propagationmanager)
+    - [AudioZone](#audiozone)
+    - [AudioPortal](#audioportal)
+    - [AmbientSource](#ambientsource)
+    - [AmbientEmitter](#ambientemitter)
+    - [AudioListenerZoneTracker](#audiolistenerzonetracker)
+    - [IPortalDoorSource](#iportaldoorsource)
+    - [PropagationProximityCuller](#propagationproximityculler)
+14. [Enums & Data Structures](#enums--data-structures)
 
 ---
 
@@ -1537,6 +1546,335 @@ Custom Inspector for AudioEventRegistry with utility buttons and migration guide
 
 ---
 
+## Propagation
+
+**Namespace:** `AudioSystem.Propagation`
+**Added in:** v2.3.0
+**Location:** `Assets/Scripts/SFX_System/RunTime/Propagation/`
+
+Zone/portal graph-based routing for long-running ambient beds. Additive — does not modify the SFX event pipeline. See [MANUAL.md Chapter 13](3_MANUAL.md#13-ambient-propagation-subsystem) for architecture and design rationale.
+
+---
+
+### PropagationManager
+
+**Namespace:** `AudioSystem.Propagation`
+**Inheritance:** `MonoBehaviour`
+**Access:** `PropagationManager.Instance` (lazy-instantiated at play time)
+
+Singleton orchestrator. Owns zone/portal/source registries, the Dijkstra solver, the emitter pool, and per-frame smoothing.
+
+#### Properties
+
+```csharp
+public static PropagationManager Instance { get; }
+public static bool HasInstance { get; }
+```
+
+`Instance` returns null in Edit mode (to prevent phantom GameObject creation on inspector edits). `HasInstance` is null-safe for use in `OnDisable` during scene teardown.
+
+#### Inspector Configuration
+
+| Field                        | Default | Description                                                                                                 |
+|------------------------------|---------|-------------------------------------------------------------------------------------------------------------|
+| `solveRateHz`                | 8       | Solves per second. Per-frame emitter smoothing handles the in-between.                                      |
+| `distancePenaltyDbPerMeter`  | 0       | Extra dB cost per meter of portal-to-portal distance. 0 = pure transmission routing.                        |
+| `maxAmbientEmitters`         | 16      | Global cap. Farthest emitters silenced first when exceeded.                                                 |
+| `emitterSmoothSpeed`         | 4       | Per-frame smoothing speed for volume/cutoff/position.                                                       |
+| `culler`                     | —       | Nested `PropagationProximityCuller` configuration.                                                          |
+| `listenerOverride`           | null    | Optional explicit listener transform. Falls back to `AudioListener` or `Camera.main`.                       |
+
+#### Registration API
+
+```csharp
+public void RegisterZone(AudioZone z);
+public void UnregisterZone(AudioZone z);
+public void RegisterPortal(AudioPortal p);
+public void UnregisterPortal(AudioPortal p);
+public void RegisterSource(AmbientSource s);
+public void UnregisterSource(AmbientSource s);
+```
+
+Zones, portals, and ambient sources self-register via their `OnEnable` / `OnDisable`. Manual calls are safe (idempotent).
+
+#### Notification API (typically called only by `AudioListenerZoneTracker`)
+
+```csharp
+public void NotifyListenerEnteredZone(AudioZone z);
+public void NotifyListenerExitedZone(AudioZone z);
+public void NotifyListenerEnteredPortal(AudioPortal p);
+public void NotifyListenerExitedPortal(AudioPortal p);
+public void NotifyPortalParamsChanged(AudioPortal p);
+```
+
+`NotifyPortalParamsChanged` triggers an immediate re-solve instead of waiting for the next scheduled tick. Called from `AudioPortal.HandleDoorChanged` when the door source fires `OnChanged`.
+
+#### Queries
+
+```csharp
+public AudioZone GetCurrentListenerZone();
+```
+
+Returns the top of the listener zone stack, or null if the listener isn't inside any registered zone.
+
+---
+
+### AudioZone
+
+**Namespace:** `AudioSystem.Propagation`
+**Inheritance:** `MonoBehaviour`
+**Required Components:** `BoxCollider` (auto-forced to `isTrigger = true`)
+
+A volume of world space tagged as one acoustic room. Nodes of the propagation graph.
+
+#### Inspector
+
+| Field              | Default | Description                                                                      |
+|--------------------|---------|----------------------------------------------------------------------------------|
+| `zoneId`           | ""      | Optional debug identifier. Not used at runtime.                                 |
+| `baseVolumeDb`     | 0       | Optional per-zone attenuation baseline added to ambient source volume.          |
+| `activationRadius` | 50      | Distance from listener beyond which this zone is culled. `Infinity` = never cull. |
+
+#### Properties
+
+```csharp
+public string ZoneId { get; }
+public float BaseVolumeDb { get; }
+public float ActivationRadius { get; }
+public IReadOnlyList<BoxCollider> VolumeColliders { get; }
+```
+
+`VolumeColliders` is populated from `GetComponents<BoxCollider>()` in `Awake` — add multiple BoxColliders for L-shapes, they're OR-unioned.
+
+#### Virtual Methods (override for custom shapes)
+
+```csharp
+public virtual bool ContainsPoint(Vector3 worldPoint);
+public virtual Vector3 ClosestSurfacePoint(Vector3 worldPoint);
+```
+
+Default implementations iterate all volume colliders. Subclass to support sphere-shaped or mesh-shaped zones without touching the solver.
+
+---
+
+### AudioPortal
+
+**Namespace:** `AudioSystem.Propagation`
+**Inheritance:** `MonoBehaviour`
+**Required Components:** `BoxCollider` (auto-forced to `isTrigger = true`)
+
+Edge of the propagation graph. Connects two zones, optionally modulated by an `IPortalDoorSource`, and doubles as the listener blend region.
+
+#### Inspector — Zones
+
+| Field    | Description                              |
+|----------|------------------------------------------|
+| `zoneA`  | One of the two connected zones.          |
+| `zoneB`  | The other connected zone.                |
+
+Both required. `OnValidate` errors if either is null or if `zoneA == zoneB`.
+
+#### Inspector — Door
+
+| Field           | Description                                                                       |
+|-----------------|-----------------------------------------------------------------------------------|
+| `doorSourceRaw` | MonoBehaviour implementing `IPortalDoorSource`. Null = always open.               |
+
+`OnValidate` clears the reference and logs an error if the assigned MonoBehaviour doesn't implement the interface.
+
+#### Inspector — Transmission
+
+| Field                | Default | Description                                                      |
+|----------------------|---------|------------------------------------------------------------------|
+| `baseTransmission`   | 1.0     | Amplitude multiplier when fully open (`OpenProgress = 1`).       |
+| `closedTransmission` | 0.1     | Amplitude multiplier when fully closed (`OpenProgress = 0`).     |
+| `openLowPassHz`      | 18000   | Low-pass cutoff when fully open.                                  |
+| `closedLowPassHz`    | 600     | Low-pass cutoff when fully closed.                                |
+
+`OnValidate` warns if `closedTransmission > baseTransmission` or `closedLowPassHz > openLowPassHz` (values likely swapped).
+
+#### Inspector — Blend Region
+
+| Field                 | Default          | Description                                                              |
+|-----------------------|------------------|--------------------------------------------------------------------------|
+| `transitionAxisLocal` | `Vector3.forward`| Local-space axis pointing through the opening. Used for blend-factor computation. |
+| `activationRadius`    | 50               | Distance from listener beyond which this portal is culled.               |
+
+#### Properties
+
+```csharp
+public AudioZone ZoneA { get; }
+public AudioZone ZoneB { get; }
+public IPortalDoorSource DoorSource { get; }
+public float ActivationRadius { get; }
+public BoxCollider TriggerCollider { get; }
+public event Action<AudioPortal> OnPortalParamsChanged;
+```
+
+#### Methods
+
+```csharp
+public float GetOpenProgress();                          // 0..1; returns 1 if no door source
+public float GetTransmissionMultiplier();                // linear amplitude, dB-interpolated
+public float GetCutoffHz();                              // log-frequency-interpolated
+public Vector3 GetVirtualEmitterPosition(Vector3 listenerWorldPos);
+public float GetBlendFactor(Vector3 listenerWorldPos);   // 0..1 along transition axis
+public AudioZone GetZoneAtBlendFactorZero();             // zone on the blend=0 axis side
+public AudioZone GetZoneAtBlendFactorOne();              // zone on the blend=1 axis side
+public AudioZone GetOpposite(AudioZone z);               // solver graph traversal
+```
+
+`GetZoneAtBlendFactorZero/One` auto-detect which zone sits on each side of the transition axis (lazy-cached on first call). Designers never configure this — they just orient the GameObject's `+Z` through the opening.
+
+---
+
+### AmbientSource
+
+**Namespace:** `AudioSystem.Propagation`
+**Inheritance:** `MonoBehaviour`
+
+Declares an ambient bed. Does not play audio directly — the `PropagationManager` drives a pooled `AmbientEmitter` on its behalf.
+
+#### Inspector
+
+| Field                  | Description                                                                          |
+|------------------------|--------------------------------------------------------------------------------------|
+| `sourceZone`           | The zone where this ambience originates (required).                                  |
+| `loopingClip`          | The looping audio clip. Must be loop-authored (no pops at boundary).                 |
+| `ambienceMixerGroup`   | `AudioMixerGroup` to route through. Use the Ambience bus for bus ducking / mix fades.|
+| `sourceBaseVolumeDb`   | Baseline volume in dB. Default 0.                                                    |
+| `playOnStart`          | Auto-register with `PropagationManager` on enable. Default true.                     |
+
+#### Properties
+
+```csharp
+public AudioZone SourceZone { get; }
+public AudioClip LoopingClip { get; }
+public AudioMixerGroup MixerGroup { get; }
+public float SourceBaseVolumeDb { get; }
+```
+
+#### Methods
+
+```csharp
+public void SetBaseVolumeDb(float db);   // clamped to [-80, 20]; picked up on next solve
+public void Register();                  // manual registration (when playOnStart is false)
+public void Unregister();                // fades out cleanly, doesn't abruptly stop
+```
+
+---
+
+### AmbientEmitter
+
+**Namespace:** `AudioSystem.Propagation`
+**Inheritance:** `MonoBehaviour` (sealed)
+**Menu:** Hidden from Add Component menu — managed programmatically by `PropagationManager`
+
+Pooled persistent looping voice. Owns its own `AudioSource` and `AudioLowPassFilter`. Bypasses the SFX voice pool by design — routed through the designated Ambience mixer group for bus integration.
+
+You generally don't interact with this component directly; the `PropagationManager` pool manages lifecycle.
+
+#### Properties
+
+```csharp
+public AmbientSource OwningSource { get; }
+public AudioPortal OwningPortal { get; }     // null for direct same-zone playback
+public bool IsSilent { get; }                // safe-to-recycle check
+public float TargetVolumeLinear { get; }
+public float CurrentVolumeLinear { get; }
+public Vector3 TargetPosition { get; }
+```
+
+#### Methods (called by PropagationManager)
+
+```csharp
+public void Initialize(AmbientSource owner, AudioClip clip, AudioMixerGroup group, float smoothSpeed);
+public void FadeInTo(AudioPortal portal, float targetVolLinear, float targetCutoffHz, Vector3 pos);
+public void SetTarget(float volumeLinear, float cutoffHz, Vector3 pos);
+public void SetOwningPortal(AudioPortal portal);
+public void FadeOut();
+public bool Tick(float dt);                  // returns true when safe to release
+public void ReleaseImmediate();              // unconditional stop + state reset
+```
+
+---
+
+### AudioListenerZoneTracker
+
+**Namespace:** `AudioSystem.Propagation`
+**Inheritance:** `MonoBehaviour`
+
+Attach to the GameObject carrying the `AudioListener`. Watches for trigger enter/exit on `AudioZone` and `AudioPortal` colliders and forwards events to `PropagationManager`.
+
+Auto-adds a kinematic `Rigidbody` if none is present — required for Unity trigger events on static zone/portal colliders.
+
+#### Inspector
+
+| Field            | Default | Description                                                                |
+|------------------|---------|----------------------------------------------------------------------------|
+| `audioZoneLayer` | Everything | Optional layer mask filter. Limits trigger detection to specified layers. |
+
+---
+
+### IPortalDoorSource
+
+**Namespace:** `AudioSystem.Propagation`
+**Type:** Interface
+
+Minimal contract any MonoBehaviour can implement to drive an `AudioPortal`'s open/closed state. Portable — propagation does not depend on any project-specific door system.
+
+```csharp
+public interface IPortalDoorSource
+{
+    float OpenProgress { get; }      // 0 = closed, 1 = open
+    event System.Action OnChanged;   // fire when OpenProgress changes meaningfully
+}
+```
+
+Firing `OnChanged` triggers an immediate re-solve on the subscribed portal. Spamming it every frame is safe but redundant; prefer threshold-based dispatch (e.g. `Δ ≥ 0.02`).
+
+#### Adapter Pattern
+
+Projects typically bridge their own door state (animator float, ScriptableObject channel, physics hinge) with a thin adapter MonoBehaviour:
+
+```csharp
+using AudioSystem.Propagation;
+
+public class DoorAnimatorAdapter : MonoBehaviour, IPortalDoorSource
+{
+    public float OpenProgress => animator.GetFloat("openAmount");
+    public event Action OnChanged;
+    // ... fire OnChanged on threshold changes
+}
+```
+
+---
+
+### PropagationProximityCuller
+
+**Namespace:** `AudioSystem.Propagation`
+**Type:** `[Serializable]` class (sub-component of `PropagationManager`, not a separate MonoBehaviour)
+
+Trims the active solver graph to zones and portals within range of the listener. Scales propagation to large levels without modifying solver logic.
+
+#### Inspector (nested under PropagationManager)
+
+| Field                     | Default | Description                                                                      |
+|---------------------------|---------|----------------------------------------------------------------------------------|
+| `cullCheckFrameInterval`  | 10      | Frames between active-set recomputations. 0 = culler disabled (everything active).|
+| `globalMaxActiveZones`    | 64      | Hard cap on active zones after radius filter. Farthest dropped first.            |
+| `globalMaxActivePortals`  | 128     | Hard cap on active portals after radius filter.                                  |
+
+#### Properties
+
+```csharp
+public bool Enabled { get; }     // true if cullCheckFrameInterval > 0
+```
+
+The culler's first tick runs immediately regardless of interval, so the solver never sees an empty graph during startup.
+
+---
+
 ## Enums & Data Structures
 
 ### VoicePriority
@@ -1742,6 +2080,17 @@ mh.UpdatePositions(newTransforms);
 
 ## Version History
 
+**v2.3.0** - April 2026
+- **New subsystem: `AudioSystem.Propagation`** — zone/portal graph-based routing for ambient beds
+- `AudioZone` / `AudioPortal` MonoBehaviours (authoring)
+- `AmbientSource` / `AmbientEmitter` (declaration + pooled persistent voice)
+- `PropagationManager` singleton + `AudioListenerZoneTracker`
+- `IPortalDoorSource` interface for portable door integration
+- `PropagationProximityCuller` for large-level scale (per-node activation radius + global caps)
+- Pure Dijkstra solver with reusable buffers (allocation-free hot path)
+- Blend-region crossfading for pop-free doorway traversal
+- Additive — does not modify any v2.2.0 APIs
+
 **v2.2.0** - March 2026
 - Runtime container override system (3D settings)
 - Per-voice control on AudioMultiHandle
@@ -1785,4 +2134,4 @@ mh.UpdatePositions(newTransforms);
 *For deep knowledge, see [MANUAL.md](3_MANUAL.md)*
 *For quick start, see [QUICK_START.md](1_QUICK_START.md)*
 
-*SFX System v2.2.0 - Professional Audio Middleware for Unity*
+*SFX System v2.3.0 - Professional Audio Middleware for Unity*

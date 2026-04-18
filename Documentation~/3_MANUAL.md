@@ -1,8 +1,8 @@
 # SFX System - Complete Technical Manual
 
-**Version:** 2.2.0
+**Version:** 2.3.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** March 2026
+**Last Updated:** April 2026
 
 ---
 
@@ -20,6 +20,7 @@
 10. [Advanced Features](#10-advanced-features)
 11. [Best Practices](#11-best-practices)
 12. [Troubleshooting](#12-troubleshooting)
+13. [Ambient Propagation Subsystem](#13-ambient-propagation-subsystem)
 
 ---
 
@@ -3235,7 +3236,260 @@ If still issues, increase buffer
 
 ---
 
+## 13. Ambient Propagation Subsystem
+
+**New in v2.3.0.** An optional, additive subsystem that ships in the same package as the rest of the SFX_System. It is designed specifically for **long-running ambient beds** (rain, wind, crowd murmur, machinery, rivers) that must route through world geometry in a physically plausible way — leaking *from* the window when the listener is in another room, muffling behind closed doors, swelling as openings widen.
+
+Propagation is **not** a replacement for the SFX event pipeline. It lives next to it, sharing the same `AudioManager`, the same mixer group structure, and the same `AudioListener`. SFX events continue to handle discrete sounds (footsteps, weapons, UI). Propagation handles the persistent acoustic background.
+
+### 13.1 Why This Subsystem Exists
+
+**Standard 3D audio falls apart for ambient beds indoors.** Unity's built-in distance attenuation and a single `AudioLowPassFilter` raycast can occlude a sound, but they can't express:
+
+- "The rain source is 100m away in the sky, but the listener should hear it *from the 2m-wide window*"
+- "The door is halfway open, so the transmission is halfway between muffled and clear"
+- "Walking through a doorway should smoothly crossfade the listener's acoustic perspective"
+
+These are **routing** problems, not gain problems. Propagation solves them by modeling rooms as graph nodes and openings as edges, then running a per-frame shortest-path solve from every ambient source to the listener.
+
+### 13.2 Mental Model
+
+```
+Zone_Outdoors ─────[Window]───── Zone_LivingRoom ─────[Door]───── Zone_Hallway
+   (rain source)                      (listener may be here)        (or here)
+```
+
+- **Zones** are volumes of world space tagged as one acoustic room. They're the graph's nodes.
+- **Portals** are openings that connect two zones. They're the graph's edges.
+- **Ambient sources** declare "I exist in this zone with this clip." They don't play audio themselves.
+- The **solver** finds the best path from each source's zone to the listener's zone, accumulating transmission loss in dB and the minimum cutoff frequency along the way.
+- The **emitter** — a persistent, pooled `AudioSource` — is positioned at the portal the listener is hearing the source *through*, with volume and low-pass driven by the accumulated path.
+
+When the listener moves between zones, the path changes, the emitter glides to a new portal, and the filtering/volume update smoothly. When a door opens, the portal's transmission multiplier increases and the next solve propagates that change end-to-end.
+
+### 13.3 Architecture
+
+**Namespace:** `AudioSystem.Propagation`
+**Location:** `Assets/Scripts/SFX_System/RunTime/Propagation/`
+
+```
+Propagation/
+├── Core/
+│   ├── AudioZone.cs          ← MonoBehaviour, graph node
+│   └── AudioPortal.cs        ← MonoBehaviour, graph edge + blend region
+├── Runtime/
+│   ├── PropagationManager.cs     ← singleton, orchestrates solve + emitters
+│   ├── AmbientSource.cs          ← declares "there is an ambient here"
+│   ├── AmbientEmitter.cs         ← pooled persistent voice
+│   ├── AudioListenerZoneTracker.cs  ← attached to listener GO
+│   └── PropagationProximityCuller.cs ← scale groundwork
+├── Interfaces/
+│   └── IPortalDoorSource.cs  ← minimal door contract (portable)
+└── Internal/
+    ├── PropagationSolver.cs  ← pure Dijkstra
+    └── PropagationPath.cs    ← solve result struct
+```
+
+### 13.4 The Solve Pipeline
+
+Every `1 / solveRateHz` seconds (default 8 Hz), or immediately on any of several "dirty" triggers:
+
+1. **Culling tick** (`PropagationProximityCuller.Tick`) — recomputes which zones and portals are within `activationRadius` of the listener. Runs every `cullCheckFrameInterval` frames (default 10). On the first tick after startup it's forced to run so the solver doesn't see an empty graph.
+
+2. **Listener-zone resolution** — top-of-stack from `listenerZoneStack`. The stack uses last-entered-wins semantics so nested zones (e.g. Kitchen ⊂ House) resolve to the innermost zone the listener most recently crossed into.
+
+3. **Blend portal selection** — if the listener is physically inside any `AudioPortal`'s trigger volume, that portal becomes the **blend portal**. If multiple overlap, the nearest wins.
+
+4. **Per-source solve:**
+   - **Blend region active?** Run Dijkstra **twice** — once targeting the zone on the portal's `blend=0` side, once targeting the `blend=1` side — then blend the two results using the listener's position along the portal's transition axis.
+   - **Not in a blend region?** Single solve: source zone → listener zone.
+
+5. **Apply results** to the source's `EmitterSlot`:
+   - No active emitter yet → acquire one from the pool and `FadeInTo(…)`
+   - Same portal as before → in-place retarget (smooth glide)
+   - Different portal → move the current emitter to the fading slot, acquire a fresh one, crossfade
+
+6. **Per-frame smoothing** (`AmbientEmitter.Tick`) — runs every frame regardless of solve rate. Smooths volume linearly, cutoff in log-frequency space, position in world space. Framerate-independent via `1 - exp(-smoothSpeed * dt)`.
+
+**Dirty triggers that force an out-of-schedule solve:**
+- Zone or portal registered / unregistered
+- Listener entered / exited a zone or portal
+- Ambient source registered / unregistered
+- `IPortalDoorSource.OnChanged` fires
+- Culler active set changes
+
+### 13.5 Solver Math
+
+The solver is plain Dijkstra over the zone graph. The twist is what goes into the edge cost.
+
+**Edge cost** (portal `p`):
+```
+cost(p) = -20 * log10(transmissionMultiplier(p))
+        + distancePenaltyDbPerMeter * distance
+```
+
+Transmission is amplitude-space (`[0, 1]`). Converting to dB makes losses *additive* along a path — summing edge costs in dB is equivalent to multiplying amplitudes, which is the physically correct composition of cascaded openings.
+
+**Distance penalty** is optional (`0` by default). Raise it slightly to prefer geographically closer portals when transmission is similar, e.g. so a listener in a long corridor routes rain through the nearer of two equally-open windows.
+
+**Cutoff aggregation** is by **minimum** across the path, not sum. A chain of low-pass filters is dominated by the tightest one — later filters cannot restore frequencies earlier ones removed. The solver tracks this separately from the Dijkstra cost and reads out the final value once it reaches the listener zone.
+
+### 13.6 Blend Region Crossfading
+
+The naive approach to doorway transitions — "if listener is in Zone A, play path A; if in Zone B, play path B" — produces an audible snap at the exact moment the listener crosses the threshold. Real rooms don't work that way; the listener's ears mix contributions from both spaces continuously across the doorway.
+
+**The fix**, implemented in `PropagationManager.ApplyBlendedResult`:
+
+1. Compute blend factor `t ∈ [0, 1]` from the listener's position along the portal's transition axis.
+2. Solve twice — once targeting `GetZoneAtBlendFactorZero()`, once targeting `GetZoneAtBlendFactorOne()`.
+3. **Volume**: blend in dB space (`Mathf.Lerp(aDb, bDb, t)`, then `10^(db/20)`) so the perceptual ramp is even.
+4. **Cutoff**: blend in log-frequency space (`exp(lerp(log(aHz), log(bHz), t))`).
+5. **Virtual emitter position**: linear world-space `Lerp` between the two path endpoints.
+6. **Owning portal**: remains the blend portal throughout — never flipped mid-doorway, which would cause an unnecessary pool swap.
+
+The result is a continuous, pop-free traversal of any doorway, regardless of how fast the listener walks through.
+
+#### Auto-detecting blend axis orientation
+
+Zone ordering (`ZoneA` vs `ZoneB`) is arbitrary — designers can drag them in any order. To avoid the manager needing to know which side is which, the portal auto-detects this in `DetectPositiveAxisIsZoneB`: it probes points slightly outside the trigger on each axis end and tests which zone's `ContainsPoint` returns true. The result is cached on first query. Designers never configure this directly — they just orient the GameObject's `+Z` through the opening.
+
+### 13.7 Emitter Pool Design
+
+Propagation emitters are **persistent looping voices**, not short-fire SFX. That has two important consequences:
+
+**1. They bypass the SFX voice pool by design.** `AudioManager.OcclusionPerf` iterates only the pool-owned `realVoices` list and applies raycast-based occlusion + low-pass filtering. If propagation emitters were registered with that pool, they'd receive **two** filters stacked — propagation's portal-based low-pass *plus* occlusion's raycast low-pass — sounding far too dull. By owning their own `AudioSource`, propagation emitters sidestep this without any change to the SFX path.
+
+**2. The Ambience mixer group still applies.** The emitters route `AudioSource.outputAudioMixerGroup = ambienceMixerGroup`, so bus ducking, master volume, scene-unload mixer fades, and effect sends all still function. They're decoupled from the voice pool, not from the mix bus.
+
+**Pool lifecycle per source:**
+
+```
+EmitterSlot {
+    Active  : AmbientEmitter   // currently voicing the best path
+    Fading  : AmbientEmitter   // previous emitter, ramping down after swap
+}
+```
+
+On a portal change:
+1. `Fading` is recycled to the pool (only if already silent — otherwise keep it and skip the swap, to avoid a pop from abruptly stopping an audible source)
+2. Old `Active` → `Fading`, `FadeOut()` called
+3. New `Active` acquired from pool, `FadeInTo(newPortal, …)` with minimum 50 ms ramp
+
+**Global cap:** `maxAmbientEmitters = 16` (inspector). When exceeded — pathological scenes with many simultaneous sources — the farthest emitter is faded out first.
+
+### 13.8 Per-Frame Smoothing
+
+Solves run at 8 Hz, but the ear is sensitive to parameter discontinuities at any rate. Every frame, `AmbientEmitter.Tick` pulls current values toward targets using:
+
+```
+k = 1 - exp(-smoothSpeed * dt)
+current = lerp(current, target, k)
+```
+
+This is framerate-independent (doesn't drift at 30 FPS vs 120 FPS) and gives exponential approach with a time constant of `1 / smoothSpeed`. Default `smoothSpeed = 4` → ~250 ms to reach ~98% of a target. Values in the 3–5 range cover most use cases; higher values feel snappier but expose solve-tick boundaries.
+
+**Pop-prevention rules**:
+- Never start at full volume. First-frame rise is clamped to `dt / MinFadeSeconds` (50 ms).
+- Never stop at non-zero volume. `Tick` only calls `Stop()` when both current and target are below the silence threshold AND `fadingOutForRelease` is true.
+- Retargeting to an audible value clears the release flag, cancelling any in-progress fade-out.
+
+### 13.9 Door Abstraction (`IPortalDoorSource`)
+
+Propagation is shipping inside the SFX_System package, which is consumed by many projects. It cannot depend on any specific project's door system. The solution:
+
+```csharp
+namespace AudioSystem.Propagation
+{
+    public interface IPortalDoorSource
+    {
+        float OpenProgress { get; }   // 0 = closed, 1 = open
+        event System.Action OnChanged;
+    }
+}
+```
+
+**Any MonoBehaviour** that implements this interface can be dragged into an `AudioPortal`'s `Door Source` field. Projects bridge their own door system (ScriptableObject channels, event buses, animator parameters, physics-driven hinges) with a thin adapter MonoBehaviour. The portal subscribes to `OnChanged` and requests an immediate re-solve when the event fires — so fast door swings don't wait for the next 8 Hz tick.
+
+Portals with `doorSource == null` are treated as always open — windows, archways, vents.
+
+### 13.10 Authoring Rules (Enforced by OnValidate)
+
+Many propagation bugs are authoring mistakes. The inspector catches them:
+
+- **Zone colliders must be triggers.** `AudioZone.OnValidate` force-sets `isTrigger = true` on every BoxCollider on the GameObject and logs a warning.
+- **Portal colliders must overlap both zone colliders by ≥ 5 cm.** Without overlap, the listener can fall into a "no zone" gap at the doorway and emitters flicker. `AudioPortal.OnValidate` computes the AABB overlap and logs an inspector error on each zone that fails.
+- **`closedTransmission` must be ≤ `baseTransmission`**, and `closedLowPassHz` must be ≤ `openLowPassHz`. Swapping these is a common mistake — the portal warns if detected.
+- **Both zones required.** Null zone references log an inspector error. Zone self-loops (zoneA == zoneB) also logged.
+- **Activation radius must be > 0.** Use `float.PositiveInfinity` to opt out of culling; zero is never valid.
+
+### 13.11 Scale: The Proximity Culler
+
+Naïve Dijkstra over 200 zones + 400 portals is O(V·E) per solve, per source. The `PropagationProximityCuller` ensures the solver only sees what matters:
+
+- Every `cullCheckFrameInterval` frames (default 10), recompute the active set based on per-node `activationRadius` distance from listener.
+- Global hard caps (`globalMaxActiveZones = 64`, `globalMaxActivePortals = 128`) drop the farthest when the radius filter still yields too many.
+- The listener's current zone is **always** included even if outside its radius — prevents silent emitters for a listener standing next to a culled-out zone.
+- Opt out per node: `activationRadius = float.PositiveInfinity` (e.g. outdoor ambience zones that should never cull).
+- Opt out globally: `cullCheckFrameInterval = 0`.
+
+**Startup**: the culler forces its first recompute to run immediately regardless of interval, so the solver never sees an empty graph during the first 10 frames of play.
+
+### 13.12 Integration with Existing SFX_System Features
+
+| Feature                          | Interaction with propagation                                                                          |
+|----------------------------------|-------------------------------------------------------------------------------------------------------|
+| `AudioManager` singleton         | Read-only consumer. Propagation does not modify AudioManager or add RTPC/state requirements.          |
+| `SetRTPC` / `IRTPCListener`      | Reserved for global/weather parameters. Propagation drives per-emitter `AudioSource.volume` directly. |
+| `AudioBus` + `AudioMixerGroup`   | AmbientEmitters route through a designated Ambience mixer group. Bus ducking and master fades still apply. |
+| `AudioState`                     | Phase-2 hook — e.g. "Player_Outdoors" could tweak global ambience bus. Not wired in v2.3.0.          |
+| `AudioManager.OcclusionPerf`     | Safe by design — iterates pool-owned `realVoices` only. Propagation emitters bypass the pool.        |
+| `AudioMultiPositionEmitterParent`| Orthogonal. Future `AmbientSource` refinement could delegate source-position selection to one.       |
+| SFX events (`AudioEvent`)        | Unchanged. Both systems share the AudioManager; neither modifies the other.                          |
+
+### 13.13 Performance
+
+- **Solver**: ~0.1 ms per source per solve for a culled graph of ~20 zones / ~40 portals (Editor, mid-range desktop). Reusable `PropagationSolver.Buffers` eliminate per-tick GC.
+- **Solve cadence**: 8 Hz default. Mobile can safely drop to 4 Hz — the emitter's per-frame smoothing hides the lower rate for walking-speed movement.
+- **Emitters**: cost = `maxAmbientEmitters` AudioSource channels. Default cap is 16 — well within voice headroom even on mobile.
+- **Allocation-free** in the hot path: solver buffers, scan scratch list, culler scratch list, and emitter pool are all reused.
+
+### 13.14 Design Limits
+
+Known limits as of v2.3.0:
+
+1. **Single-best-path only.** The solver picks one path per source. If rain leaks through both a window and an open skylight simultaneously, you hear it through whichever has lower transmission loss. Phase-2: multi-path playback with per-portal emitters.
+2. **No diffraction.** Real sound bends around corners; the solver assumes straight-line zone adjacency. For small spaces this is rarely noticeable; for huge open-plan spaces you may want to subdivide into more zones.
+3. **No raycast occlusion on the propagation path.** The path is purely zone/portal topology. If you need clutter-based occlusion on top (e.g. crates blocking a line of sight), that remains the job of `AudioManager.OcclusionPerf` on SFX voices — not propagation emitters.
+4. **Blend factor updates at solve rate, not per-frame.** For extremely fast doorway traversals (sub-200 ms) you may want to raise `solveRateHz` to 16–20. For walking speeds the default is imperceptible.
+5. **Box-shaped zones by default.** L-shaped zones work via multi-BoxCollider OR-union. For sphere/mesh-shaped zones, subclass `AudioZone` and override `ContainsPoint` / `ClosestSurfacePoint` — both are `virtual` for this reason.
+
+### 13.15 Troubleshooting
+
+**Sound appears flat or doesn't propagate through doorways.**
+- Confirm zones and portals are registered: `Debug.Log(PropagationManager.Instance)` in play mode; inspector shows the manager component if auto-instantiated.
+- Zone colliders must have `isTrigger = true` (usually auto-forced). Check the physics layer matrix — if the listener's layer doesn't interact with the zone's layer, trigger events never fire.
+- `AudioListenerZoneTracker` must be on the same GameObject as the `AudioListener`.
+
+**Emitter flickers at a doorway.**
+- Portal collider doesn't overlap one of the zone colliders by ≥ 5 cm. Inspector error will say which zone. Extend one or both to overlap.
+
+**Pops or clicks.**
+- Almost always an un-looped clip. The emitter sets `AudioSource.loop = true`; Unity replays the clip from sample 0 with no crossfade. The clip itself must be seamless.
+
+**Door animation doesn't affect audio in real time.**
+- The `IPortalDoorSource` implementation must fire `OnChanged` on value changes. Without it, the portal only picks up the new value on the next solve tick (≤ 125 ms latency at 8 Hz).
+- Spamming `OnChanged` every frame is fine — each fire triggers one re-solve, and the solve cost is modest — but prefer a threshold (e.g. `Δ ≥ 0.02`) to avoid redundant work during continuous animation.
+
+**First solve after loading is silent for ~150 ms.**
+- Fixed as of v2.3.0 — the culler's first tick runs immediately regardless of interval. If you still see this, confirm you're on v2.3.0 or later.
+
+---
+
 ## Appendix A: Glossary
+
+**AmbientEmitter:** Pooled persistent looping voice managed by the propagation subsystem. Bypasses the SFX voice pool; routed through an AudioMixerGroup.
+
+**AmbientSource:** Component declaring "there is an ambient bed in this zone with this clip." Doesn't play audio directly — the propagation manager drives a pooled AmbientEmitter on its behalf.
 
 **AudioContainer:** ScriptableObject defining how audio clips are organized and played
 
@@ -3245,7 +3499,11 @@ If still issues, increase buffer
 
 **AudioMultiHandle:** Control interface for multi-voice playback
 
+**AudioPortal:** Propagation subsystem edge — connects two AudioZones and models an opening (door, window, archway) with transmission and low-pass cutoff driven by an optional IPortalDoorSource.
+
 **AudioVoice:** Single playing audio instance
+
+**AudioZone:** Propagation subsystem node — a volume of world space tagged as one acoustic room. Supports multiple BoxColliders for L-shapes.
 
 **Bus:** Volume control group in hierarchical structure
 
@@ -3259,6 +3517,8 @@ If still issues, increase buffer
 
 **GainStack:** Layered volume control system
 
+**IPortalDoorSource:** Interface any MonoBehaviour can implement to drive an AudioPortal's open/closed state. Decouples propagation from any specific project's door system.
+
 **Instance Limiting:** Maximum concurrent playbacks of same event
 
 **LOD:** Level of Detail, distance-based audio optimization
@@ -3267,7 +3527,13 @@ If still issues, increase buffer
 
 **Occlusion:** Raycast-based sound blocking
 
+**Portal:** See AudioPortal.
+
 **Priority:** Voice stealing priority (Low, Medium, High, Critical)
+
+**Propagation:** Zone/portal graph-based routing of long-running ambient beds through world geometry.
+
+**PropagationManager:** Singleton orchestrator of the propagation subsystem. Owns registries, the solver, and the emitter pool. Auto-instantiated on first reference.
 
 **RTPC:** Real-Time Parameter Control, dynamic audio parameter
 
@@ -3280,6 +3546,8 @@ If still issues, increase buffer
 **Voice:** Playing audio instance
 
 **Voice Stealing:** Stopping voice to make room for higher priority
+
+**Zone:** See AudioZone.
 
 ---
 
@@ -3336,4 +3604,4 @@ AudioMultiHandle multiHandle = event.PostMultiPosition(emitterParent);
 *For API documentation, see API_REFERENCE.md*
 *For quick start, see QUICK_START.md*
 
-*SFX System v1.0 - Professional Audio Middleware for Unity*
+*SFX System v2.3.0 - Professional Audio Middleware for Unity*
