@@ -1,4 +1,4 @@
-# SFX System 2.2.1
+# SFX System 2.3.0
 
 A simple, modular sound effects system for Unity.
 

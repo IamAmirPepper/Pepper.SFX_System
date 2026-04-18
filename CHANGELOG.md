@@ -1,8 +1,7 @@
 # Changelog
-## [2.2.1] - 2026-03-24
+## [2.3.0] - 2026-03-24
 
-AudioVoicePoolDebugWindow
-better pooling and voice cleanup
+Audio Propagation V1
 
 For questions or suggestions, see existing documentation:
 - [Quick Setup Guide](0_QUICK_SETUP.md)
