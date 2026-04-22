@@ -1,7 +1,7 @@
 # Changelog
-## [2.3.0] - 2026-03-24
+## [2.3.1] - 2026-03-24
 
-Audio Propagation V1
+Beat Scheduler
 
 For questions or suggestions, see existing documentation:
 - [Quick Setup Guide](0_QUICK_SETUP.md)
