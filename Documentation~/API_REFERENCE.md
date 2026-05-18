@@ -1,10 +1,10 @@
 # SFX System - API Reference
 
-**Version:** 2.3.0
+**Version:** 2.5.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** April 2026
+**Last Updated:** May 2026
 
-**Complete API documentation for SFX System v2.3.0**
+**Complete API documentation for SFX System v2.5.0**
 
 ---
 
@@ -34,7 +34,17 @@
     - [AudioListenerZoneTracker](#audiolistenerzonetracker)
     - [IPortalDoorSource](#iportaldoorsource)
     - [PropagationProximityCuller](#propagationproximityculler)
-14. [Enums & Data Structures](#enums--data-structures)
+14. [Occlusion Mixer Slots](#occlusion-mixer-slots)
+    - [OcclusionLayout](#occlusionlayout)
+    - [OcclusionSlot](#occlusionslot)
+    - [AudioManager Slot Pool API](#audiomanager-slot-pool-api)
+15. [Reverb Send Buses](#reverb-send-buses)
+    - [ReverbSendBus](#reverbsendbus)
+    - [ReverbSendBusRegistry](#reverbsendbusregistry)
+    - [AudioReverbProfile](#audioreverbprofile)
+    - [AudioZone reverb fields](#audiozone-reverb-fields)
+    - [AudioManager Reverb-Sends API](#audiomanager-reverb-sends-api)
+16. [Enums & Data Structures](#enums--data-structures)
 
 ---
 
@@ -43,6 +53,39 @@
 **Namespace:** `AudioSystem`
 **Inheritance:** `MonoBehaviour` (partial class)
 **Access:** Singleton via `AudioManager.Instance`
+
+### Inspector Configuration
+
+The core AudioManager fields. Occlusion-related inspector fields (slot pools, ray count, smoothing taus) live in the [AudioManager Slot Pool API](#audiomanager-slot-pool-api) section. Reverb-sends fields live in the [AudioManager Reverb-Sends API](#audiomanager-reverb-sends-api) section.
+
+#### Audio Configuration
+
+| Field                                | Default | Description                                                                              |
+|--------------------------------------|---------|------------------------------------------------------------------------------------------|
+| `masterMixerGroup`                   | null    | Optional master mixer group handle. Not directly routed by AudioManager; exposed for project-side scripts. |
+| `masterVolume` (range 0–1)           | 1       | Global linear volume multiplier applied to every voice. Combines with per-bus volumes.   |
+| `muteAll`                            | false   | Global mute switch. When ON, every voice's output is forced to zero.                     |
+
+#### Voices
+
+| Field                  | Default | Description                                                                                                   |
+|------------------------|---------|---------------------------------------------------------------------------------------------------------------|
+| `maxRealVoices`        | 32      | Maximum voices playing through real AudioSources at once. Voices beyond this are kept virtual and promoted when slots free up. |
+| `maxVirtualVoices`     | 64      | Maximum virtual voices tracked behind the real-voice cap. Hard ceiling on concurrent voices the system is aware of. |
+| `voiceUpdateInterval`  | 0.1     | Seconds between voice priority / virtualization passes (default 10 Hz).                                       |
+
+#### Occlusion / LOD
+
+| Field                       | Default | Description                                                                              |
+|-----------------------------|---------|------------------------------------------------------------------------------------------|
+| `occlusionMask`             | ~0      | Physics layer mask used by the occlusion raycast. Exclude AudioZone trigger layers.      |
+| `occlusionUpdateInterval`   | 0.2     | Seconds between OcclusionUpdate ticks (raycast cadence, default 5 Hz). Per-frame smoothing handles the in-between. |
+| `enableLOD`                 | true    | Master switch for distance-based voice LOD.                                              |
+| `lodDistances`              | `{10, 25, 50, 100}` | Distance thresholds (meters) at which the LOD system steps down voice quality. Values must be ascending. |
+
+See the slot-pool subsection for `occlusionRayCount`, `occlusionRaySpreadMeters`, `occlusionGainSmoothingSeconds`, `occlusionCutoffSmoothingSeconds`, `voiceMixer`, `occlusionLayout`, and `defaultOcclusionSlotsPerBus`. See the reverb-sends subsection for `reverbSendBusRegistry` and `reverbSendsUpdateInterval`.
+
+---
 
 ### Properties
 
@@ -862,6 +905,21 @@ public AudioRolloffMode RolloffMode { get; }
 public bool HasOverrides { get; }
 ```
 
+#### Routing / Slot Pool Opt-Ins
+
+```csharp
+public bool UseOcclusion { get; }          // raycast occlusion
+public bool UsePropagation { get; }        // propagation cutoff (composes with raycast via min-wins)
+public bool AllowReverbSend { get; }       // per-zone reverb sends
+public float ReverbSendLevelDb { get; }    // per-container reverb send level (dB)
+public bool StaticEmitter { get; }         // hint: this voice doesn't move during playback
+public ReverbSendBus ExplicitReverbBus { get; }  // override zone-driven send routing
+```
+
+Setting any of `UseOcclusion`, `UsePropagation`, or `AllowReverbSend` to true causes the container to acquire an [OcclusionSlot](#occlusionslot) at play time. See [Manual chapter 14](USER_GUIDE.md#14-occlusion-mixer-slot-pool) for the slot pool architecture and chapter 15 for per-zone reverb sends.
+
+`StaticEmitter` and `ExplicitReverbBus` are modifiers, not feature flags — they refine the behavior of the reverb-send driver but don't on their own cause a slot to be acquired.
+
 ---
 
 ### Methods
@@ -1259,7 +1317,7 @@ public bool IsVirtual { get; }
 public float VirtualTime { get; }
 public double ScheduledStartTime { get; }
 public double ScheduledEndTime { get; }
-public AudioLowPassFilter LowPassFilter { get; }
+public OcclusionSlot OcclusionSlot { get; }     // mixer slot held while playing (null when not occluding)
 ```
 
 #### Methods
@@ -1284,9 +1342,13 @@ public class GainStack
     public float OcclusionGain { get; set; }  // Occlusion attenuation
     public float RtpcGain { get; set; }       // RTPC modulation
     public float SchedulerGain { get; set; }  // Crossfade/transition
-    public float DuckingGain { get; set; }    // Ducking attenuation
+    public float MultiplierGain { get; set; } // Per-voice multiplicative — volume randomization,
+                                              // SwitchContainer/BlendContainer outer Volume,
+                                              // and AudioExtensions.PlayWithVolume write here.
+    public float DuckingGain { get; set; }    // (Deprecated) ducking is applied at the bus, not the voice.
+                                              // Settable for back-compat but NOT included in GetFinalGain.
 
-    public float GetFinalGain()               // Returns product of all gains
+    public float GetFinalGain()               // BaseGain * BusGain * OcclusionGain * RtpcGain * SchedulerGain * MultiplierGain
     public void ApplyToSource(AudioSource source)
     public void Reset()
 }
@@ -1346,6 +1408,81 @@ public static void Invalidate()
 ```
 
 **Description:** Cached AudioListener lookup. Use to efficiently get the listener position for distance calculations.
+
+---
+
+### BeatScheduler
+
+**Namespace:** `AudioSystem`
+**Inheritance:** `MonoBehaviour`
+**File:** `RunTime/Utilities/BeatScheduler.cs`
+
+**Description:** Fires an AudioEvent on a tempo grid (BPM) whose rate can be changed at runtime **without affecting pitch**. Each beat is a fresh one-shot post via `AudioManager.PostEvent`, not a time-stretch of a continuous clip. Timing is anchored to `AudioSettings.dspTime` so cadence is stable under frame-rate fluctuation.
+
+**Use cases:** heartbeats, metronomes, ticking clocks, pulsing ambiences, sonar pings — any rhythmic SFX whose rate must vary independently of pitch.
+
+#### Inspector Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `eventName` | `string` | Name of the AudioEvent to post each beat. Looked up via `AudioManager.Instance.PostEvent`. |
+| `emitter` | `GameObject` | Optional emitter used for the posted event's source and position. Defaults to the BeatScheduler's own GameObject. |
+| `bpm` | `float` (1–600) | Beats per minute. Also writable at runtime via the `Bpm` property. |
+| `maxCatchUpBeatsPerFrame` | `int` (1–16) | Cap on `OnBeat` callbacks per Update if the scheduler falls behind (frame hitch, very high BPM). Audio always plays at most ONCE per Update regardless of this value — overdue audio beats are dropped to prevent voice-stacking thump. Only affects `OnBeat` consumers that count beats for game logic (`every 4th beat trigger X`), keeping them synchronized with the grid across hitches. |
+| `playOnEnable` | `bool` | Start scheduling automatically when enabled. |
+| `fireImmediatelyOnStart` | `bool` | Fire the first beat on the next frame (true) or wait one interval (false). |
+
+#### Properties
+
+```csharp
+public float Bpm { get; set; }          // Clamp-guarded, min 1. Setter applies to the next beat onward.
+public bool IsRunning { get; }
+public double BeatInterval { get; }     // 60 / Bpm, in seconds
+```
+
+#### Methods
+
+```csharp
+public void StartScheduling();          // Safe to call while already running (no-op).
+public void StopScheduling();           // Stops firing. Does not stop voices already posted.
+public void ResyncPhase();              // Reset phase: next beat fires at now + BeatInterval.
+```
+
+#### Events
+
+```csharp
+public event System.Action OnBeat;      // Fired on the main thread on every beat, after PostEvent.
+```
+
+Exceptions thrown by subscribers are caught and logged — they will not break the scheduler.
+
+#### Example
+
+```csharp
+using UnityEngine;
+using AudioSystem;
+
+public class StressHeartbeat : MonoBehaviour
+{
+    [SerializeField] private BeatScheduler heartbeat;
+    [SerializeField] private float calmBpm = 60f;
+    [SerializeField] private float panicBpm = 160f;
+
+    [Range(0f, 1f)] public float stress;
+
+    private void Update()
+    {
+        heartbeat.Bpm = Mathf.Lerp(calmBpm, panicBpm, stress);
+    }
+}
+```
+
+#### Notes
+
+- **Frame-level accuracy, not sample-level.** Actual playback lands on the next audio callback (a few ms after the frame). For sample-accurate musical grid scheduling, use `AudioSource.PlayScheduled` directly.
+- **BPM changes apply to the next beat.** The beat already queued is not rewound — this is deliberate so tempo ramps sound natural.
+- **Multiple schedulers are independent.** Two `BeatScheduler` components at the same BPM are not phase-locked to each other.
+- See also: *Manual §10.4 Beat-Scheduled SFX* and *Cookbook → Rhythmic SFX*.
 
 ---
 
@@ -1411,7 +1548,7 @@ public void ValidateRegistry()            // Editor only
 //    (Falls back to Resources.LoadAll if registry not found)
 ```
 
-**Migration:** See [Advanced Migration Guide](5_ADVANCED_MIGRATION_GUIDE.md) for full details.
+**Migration:** See [Migration](USER_GUIDE.md#5-migration) in the User Guide for full details.
 
 ---
 
@@ -1546,13 +1683,88 @@ Custom Inspector for AudioEventRegistry with utility buttons and migration guide
 
 ---
 
+### Occlusion Layout Builder Window
+
+**Namespace:** `AudioSystemEditor.Occlusion`
+**Type:** EditorWindow
+**Access:** `Window > Audio System > Occlusion Layout`
+
+Authors the per-bus occlusion slot hierarchy on the project's voice mixer and serializes it to an `OcclusionLayout` asset. See [Manual §14.3](USER_GUIDE.md#143-authoring-the-slot-layout).
+
+**Top-bar fields:**
+- **Voice Mixer** — the mixer to author into
+- **Occlusion Layout** — the asset to populate (or click "Create New")
+- **Reverb Send Bus Registry** (optional) — when assigned, each generated slot also receives one Send effect per registered reverb bus
+- **Slots Per Bus** — concurrent occluded voices per bus (default 6)
+
+**Actions:**
+- **Scan, Auto-Create, Refresh** — walks the project for containers / ambient sources opted into occlusion, collects unique mixer groups, authors `<Bus>_OcclusionLayer` + slot groups under each, exposes their cutoff parameters and (optional) Send level parameters, writes the result to the OcclusionLayout asset.
+- **Scan only (no mixer changes)** — read-only sanity check.
+- **Diagnose Reflection** — dumps a reflection report to the Console for the audio internals (debug aid when the auto-creator misbehaves on a new Unity version).
+
+A foldout at the bottom shows the manual schema for designers who prefer to hand-author the slot hierarchy.
+
+---
+
+### Reverb Send Buses Window
+
+**Namespace:** `AudioSystemEditor.Reverb`
+**Type:** EditorWindow
+**Access:** `Window > Audio System > Reverb Send Buses`
+
+Project-wide overview of `ReverbSendBus` assets. See [Manual §15.6](USER_GUIDE.md#156-authoring-workflow-reverbautocreator--reverb-send-buses-window).
+
+**Top-bar actions:**
+- **Create New Bus** — Save File panel for authoring a fresh `ReverbSendBus` asset
+- **Refresh** — re-scans the project for `t:ReverbSendBus` and re-runs Validate per asset
+- **Validate All** — same as Refresh but with a summary HelpBox
+- **Generate All Missing** — runs `ReverbAutoCreator.EnsureSendBus` on every bus whose `ReverbBus` is null and whose `ReverbMixer` is assigned
+
+Per-row UI: bus name (link-label, pings the asset), assigned mixer, assigned bus group, and a foldable issue list from `ReverbAutoCreator.Validate`. Auto-refreshes on window focus.
+
+---
+
+### ReverbSendBusInspector
+
+**Namespace:** `AudioSystemEditor.Reverb`
+**Type:** Custom Inspector (Editor Only)
+**Applies To:** `ReverbSendBus` assets
+
+Adds four top-of-inspector action buttons that drive `ReverbAutoCreator`:
+
+| Button                    | What it does                                                                                                  |
+|---------------------------|---------------------------------------------------------------------------------------------------------------|
+| **Generate Mixer Group**  | Authors / refreshes the mixer group + SFX Reverb effect + exposed parameters. Disabled until `Reverb Mixer` is assigned. |
+| **Validate Wiring**       | Read-only check; reports "Wiring OK" or a bullet list of issues. Always enabled.                              |
+| **Apply Params → Mixer**  | Pushes the SO's parametric values into the mixer effect without re-running the group/expose work. Enabled once `Reverb Bus` is generated. |
+| **Pull Params ← Mixer**   | Copies the mixer effect's current values back onto the SO.                                                    |
+
+The ten Advanced parametric reverb fields live behind an EditorPrefs-backed foldout (closed by default); the four Basic fields stay visible. EditorPrefs key is project-wide so the toggle survives selection changes.
+
+---
+
+### AudioPortalEditor / AudioZoneEditor / PropagationManagerEditor
+
+**Namespace:** `AudioSystemEditor.Propagation`
+**Type:** Custom Inspectors (Editor Only)
+
+Diagnostic inspectors for the propagation subsystem's runtime components.
+
+- **AudioPortalEditor** — adds a Portal Diagnostics panel showing door source status, current transmission / cutoff (live in play mode), and the auto-detected blend-axis side mapping. Includes a "Re-detect zone sides" button.
+- **AudioZoneEditor** — adds a Zone Diagnostics panel showing live reverb profile values, volume collider counts, and the list of `AudioPortal`s in loaded scenes referencing this zone.
+- **PropagationManagerEditor** — adds a Runtime Debug panel (play mode only) showing registered zone/portal/source counts, active zone/portal counts after culling, the listener's zone stack, blend-portal membership, pending hysteresis events, and emitter pool counters.
+
+All three refresh every repaint while in play mode (via `RequiresConstantRepaint`).
+
+---
+
 ## Propagation
 
 **Namespace:** `AudioSystem.Propagation`
 **Added in:** v2.3.0
 **Location:** `Assets/Scripts/SFX_System/RunTime/Propagation/`
 
-Zone/portal graph-based routing for long-running ambient beds. Additive — does not modify the SFX event pipeline. See [MANUAL.md Chapter 13](3_MANUAL.md#13-ambient-propagation-subsystem) for architecture and design rationale.
+Zone/portal graph-based routing for long-running ambient beds. Additive — does not modify the SFX event pipeline. See [Manual Chapter 13](USER_GUIDE.md#13-ambient-propagation-subsystem) for architecture and design rationale.
 
 ---
 
@@ -1575,14 +1787,24 @@ public static bool HasInstance { get; }
 
 #### Inspector Configuration
 
-| Field                        | Default | Description                                                                                                 |
-|------------------------------|---------|-------------------------------------------------------------------------------------------------------------|
-| `solveRateHz`                | 8       | Solves per second. Per-frame emitter smoothing handles the in-between.                                      |
-| `distancePenaltyDbPerMeter`  | 0       | Extra dB cost per meter of portal-to-portal distance. 0 = pure transmission routing.                        |
-| `maxAmbientEmitters`         | 16      | Global cap. Farthest emitters silenced first when exceeded.                                                 |
-| `emitterSmoothSpeed`         | 4       | Per-frame smoothing speed for volume/cutoff/position.                                                       |
-| `culler`                     | —       | Nested `PropagationProximityCuller` configuration.                                                          |
-| `listenerOverride`           | null    | Optional explicit listener transform. Falls back to `AudioListener` or `Camera.main`.                       |
+| Field                            | Default | Description                                                                                                 |
+|----------------------------------|---------|-------------------------------------------------------------------------------------------------------------|
+| `solveRateHz`                    | 15      | Solves per second. Per-frame emitter smoothing handles the in-between.                                      |
+| `distancePenaltyDbPerMeter`      | 0       | Extra dB cost per meter of portal-to-portal distance. 0 = pure transmission routing.                        |
+| `silenceOutsideGraph`            | false   | When false, voices outside every AudioZone play at full audibility (whitelist mode). When true, they fall silent and maximally muffled (complete-coverage mode). See [Manual §13.4](USER_GUIDE.md#134-the-solve-pipeline). |
+| `transmissionSkipThreshold`      | 1e-5    | Linear-amplitude floor below which the solver treats a portal as fully closed and skips it. Raise to cull near-closed doors earlier. |
+| `drawListenerZoneOverlay`        | false   | Editor-only debug overlay. When ON, draws a scene-view label above the listener showing the current zone name and inside-portal count. |
+| `maxAmbientEmitters`             | 16      | Global cap. Farthest emitters silenced first when exceeded.                                                 |
+| `prewarmPoolSize` (range 0–64)   | 0       | Pre-allocate this many AmbientEmitter GameObjects at Start. Clamped to maxAmbientEmitters. 0 = lazy.        |
+| `emitterSmoothSpeed`             | 4       | Per-frame smoothing speed for volume/cutoff/position.                                                       |
+| `maxPathsPerSource` (range 1–6)  | 1       | How many simultaneous propagation paths each ambient source may voice. 1 = original single-best-path. Raise to hear an ambience leak through multiple openings at once. |
+| `enableObstruction`              | false   | Per-emitter listener→virtual-emitter raycast obstruction on top of portal-based propagation.                |
+| `obstructionLayerMask`           | ~0      | Physics layer mask for the obstruction raycast.                                                             |
+| `obstructionAttenuationDb` (0–30)| 6       | Extra dB applied when the obstruction ray is blocked.                                                       |
+| `obstructionCutoffHz` (100–22000)| 2000    | Upper bound on the low-pass cutoff under obstruction. Combines with solver cutoff via min-wins.             |
+| `zoneDwellSeconds` (0–1)         | 0.15    | Dwell time before a listener zone enter/exit commits. Absorbs straddle-jitter on boundary crossings. 0 = instant commit. |
+| `culler`                         | —       | Nested `PropagationProximityCuller` configuration (see below).                                              |
+| `listenerOverride`               | null    | Optional explicit listener transform. Falls back to `AudioListener` or `Camera.main`.                       |
 
 #### Registration API
 
@@ -1613,9 +1835,20 @@ public void NotifyPortalParamsChanged(AudioPortal p);
 
 ```csharp
 public AudioZone GetCurrentListenerZone();
+public AudioZone GetZoneContainingPoint(Vector3 worldPoint);
+public AudioZone FindFirstZoneFeedingBus(AudioMixerGroup busGroup);
+public float GetSourceAudibility(AudioZone sourceZone);
+public float GetSourcePropagationCutoff(AudioZone sourceZone);
+public AudioZone GetResolvedListenerReverbProfile(Vector3 listenerPos, AudioReverbProfile dest);
+public AudioZone GetResolvedListenerReverbProfile(AudioReverbProfile dest);
+public bool SilenceOutsideGraph { get; }
 ```
 
-Returns the top of the listener zone stack, or null if the listener isn't inside any registered zone.
+- `GetCurrentListenerZone` — top of the listener zone stack, or null if the listener isn't inside any registered zone.
+- `GetZoneContainingPoint` — first registered zone whose `ContainsPoint(worldPoint)` returns true, or null. Used by the reverb-send driver to resolve source zones.
+- `FindFirstZoneFeedingBus` — first registered zone whose `ReverbBus` matches the given mixer group, or null. Used by the listener-side bus-params driver as the fallback canonical zone when the listener is outside any bus-feeding zone.
+- `GetSourceAudibility` / `GetSourcePropagationCutoff` — per-zone reads from the listener-audibility cache, populated each solve tick. Same-zone = 1.0 / 22 kHz; through-portals = chain-of-portals weight; unreachable = 0 / 500 Hz.
+- `GetResolvedListenerReverbProfile` — fills the provided `AudioReverbProfile` with the listener's current zone profile (portal-blend lerped when inside a blend region). Returns the canonical zone whose profile was written.
 
 ---
 
@@ -1633,7 +1866,10 @@ A volume of world space tagged as one acoustic room. Nodes of the propagation gr
 |--------------------|---------|----------------------------------------------------------------------------------|
 | `zoneId`           | ""      | Optional debug identifier. Not used at runtime.                                 |
 | `baseVolumeDb`     | 0       | Optional per-zone attenuation baseline added to ambient source volume.          |
-| `activationRadius` | 50      | Distance from listener beyond which this zone is culled. `Infinity` = never cull. |
+| `activationRadius` | 50      | Distance from listener beyond which this zone is culled. `Infinity` = never cull. The culler preserves transitive reachability — a zone connected to the listener's zone through near portals is force-included even when individually out of range. |
+| `entryFadeMeters` (Min 0) | 0 | Soft membership band measured inward from the trigger surface. 0 = hard boundary (binary in/out). When > 0, a point at the surface has membership 0 and a point this many meters inside has membership 1; lerps linearly in between. Used to fade reverb sends, listener-side reverb character, and `BaseVolumeDb` smoothly across the boundary. |
+| `reverbProfile`    | silent  | `AudioReverbProfile` driving the listener-side bus character when the listener is in this zone. Defaults to silent (`Room = -10000`). See [Reverb Send Buses](#reverb-send-buses). |
+| `reverbBus`        | null    | The mixer reverb bus voices physically in this zone send to (source-side). Drag in the `ReverbBus` field from a `ReverbSendBus` asset. Null = no reverb-send routing for sources in this zone. |
 
 #### Properties
 
@@ -1641,6 +1877,9 @@ A volume of world space tagged as one acoustic room. Nodes of the propagation gr
 public string ZoneId { get; }
 public float BaseVolumeDb { get; }
 public float ActivationRadius { get; }
+public float EntryFadeMeters { get; }
+public AudioReverbProfile ReverbProfile { get; }   // never null at runtime; defaults to AudioReverbProfile.Off
+public AudioMixerGroup ReverbBus { get; }          // null when no bus assigned
 public IReadOnlyList<BoxCollider> VolumeColliders { get; }
 ```
 
@@ -1651,9 +1890,10 @@ public IReadOnlyList<BoxCollider> VolumeColliders { get; }
 ```csharp
 public virtual bool ContainsPoint(Vector3 worldPoint);
 public virtual Vector3 ClosestSurfacePoint(Vector3 worldPoint);
+public virtual float GetMembershipFactor(Vector3 worldPoint);  // 0..1; binary when entryFadeMeters == 0
 ```
 
-Default implementations iterate all volume colliders. Subclass to support sphere-shaped or mesh-shaped zones without touching the solver.
+Default implementations iterate all volume colliders. Subclass to support sphere-shaped or mesh-shaped zones without touching the solver. Subclasses that override `GetMembershipFactor` must respect the contract "0 at surface, 1 once fully inside."
 
 ---
 
@@ -1667,12 +1907,13 @@ Edge of the propagation graph. Connects two zones, optionally modulated by an `I
 
 #### Inspector — Zones
 
-| Field    | Description                              |
-|----------|------------------------------------------|
-| `zoneA`  | One of the two connected zones.          |
-| `zoneB`  | The other connected zone.                |
+| Field              | Default | Description                                                                                  |
+|--------------------|---------|----------------------------------------------------------------------------------------------|
+| `zoneA`            | null    | One of the two connected zones.                                                              |
+| `zoneB`            | null    | The other connected zone.                                                                    |
+| `autoDetectZones`  | false   | On first enable, probe the portal's own trigger-collider world bounds and pick the two `AudioZone`s whose volumes overlap. Lets designers drop a portal into a doorway without hand-assigning the zone refs. One-time scan at OnEnable; manually-assigned refs are kept as fallback if fewer than two are found. |
 
-Both required. `OnValidate` errors if either is null or if `zoneA == zoneB`.
+`zoneA` and `zoneB` are required (either assigned manually or filled by auto-detect). `OnValidate` errors if either is null or if `zoneA == zoneB`.
 
 #### Inspector — Door
 
@@ -1688,7 +1929,7 @@ Both required. `OnValidate` errors if either is null or if `zoneA == zoneB`.
 |----------------------|---------|------------------------------------------------------------------|
 | `baseTransmission`   | 1.0     | Amplitude multiplier when fully open (`OpenProgress = 1`).       |
 | `closedTransmission` | 0.1     | Amplitude multiplier when fully closed (`OpenProgress = 0`).     |
-| `openLowPassHz`      | 18000   | Low-pass cutoff when fully open.                                  |
+| `openLowPassHz`      | 12000   | Low-pass cutoff when fully open. Slightly muffled but audibly distinct from transparent — a door-less portal at least makes itself heard.    |
 | `closedLowPassHz`    | 600     | Low-pass cutoff when fully closed.                                |
 
 `OnValidate` warns if `closedTransmission > baseTransmission` or `closedLowPassHz > openLowPassHz` (values likely swapped).
@@ -1735,15 +1976,32 @@ public AudioZone GetOpposite(AudioZone z);               // solver graph travers
 
 Declares an ambient bed. Does not play audio directly — the `PropagationManager` drives a pooled `AmbientEmitter` on its behalf.
 
-#### Inspector
+#### Inspector — Source
 
-| Field                  | Description                                                                          |
-|------------------------|--------------------------------------------------------------------------------------|
-| `sourceZone`           | The zone where this ambience originates (required).                                  |
-| `loopingClip`          | The looping audio clip. Must be loop-authored (no pops at boundary).                 |
-| `ambienceMixerGroup`   | `AudioMixerGroup` to route through. Use the Ambience bus for bus ducking / mix fades.|
-| `sourceBaseVolumeDb`   | Baseline volume in dB. Default 0.                                                    |
-| `playOnStart`          | Auto-register with `PropagationManager` on enable. Default true.                     |
+| Field                  | Default | Description                                                                          |
+|------------------------|---------|--------------------------------------------------------------------------------------|
+| `sourceZone`           | null    | The zone where this ambience originates (required).                                  |
+| `loopingClip`          | null    | The looping audio clip. Must be loop-authored (no pops at boundary).                 |
+| `ambienceMixerGroup`   | null    | `AudioMixerGroup` to route through. Use the Ambience bus for bus ducking / mix fades.|
+| `useOcclusion`         | false   | Flag for the Occlusion Layout Builder scan. When true, this source's mixer group is included so a slot layer is generated under it. Does not change emitter audio behavior — propagation drives the per-emitter low-pass directly. |
+
+#### Inspector — Level
+
+| Field                  | Default | Description                                                                          |
+|------------------------|---------|--------------------------------------------------------------------------------------|
+| `sourceBaseVolumeDb`   | 0       | Baseline volume in dB. Propagation attenuation is subtracted from this. Clamped to [-60, 12] in the inspector. |
+| `playOnStart`          | true    | Auto-register with `PropagationManager` on enable. Set false for sources controlled manually (weather toggling rain). |
+
+#### Inspector — 3D Rolloff (optional override)
+
+| Field                  | Default            | Description                                                                          |
+|------------------------|--------------------|--------------------------------------------------------------------------------------|
+| `overrideRolloff`      | false              | Master switch for the override block. When false, the emitter uses neutral defaults (Linear / 1m / 500m), tuned for ambient beds whose spatial position is dominated by the propagation solver. |
+| `rolloffMode`          | `Linear`           | Distance falloff curve. Linear = evenly distributed; Logarithmic = matches Unity's default. Custom not supported here. |
+| `minDistance` (Min 0.01)| 1                 | Distance at which the source is at full volume.                                       |
+| `maxDistance` (Min 0.1) | 500               | Distance at which the source becomes inaudible (Linear) or quiet (Log).               |
+
+Override settings apply to the AudioSource component on the managed emitter each time it's acquired from the pool. Leave `overrideRolloff = false` (the default) when the source's role is "propagation-routed bed" — the solver's per-emitter LPF and the portal-driven virtual-emitter position handle spatialisation. Turn on for tight point-source ambiences (a humming machine that needs a 10m maxDistance, etc.).
 
 #### Properties
 
@@ -1752,6 +2010,7 @@ public AudioZone SourceZone { get; }
 public AudioClip LoopingClip { get; }
 public AudioMixerGroup MixerGroup { get; }
 public float SourceBaseVolumeDb { get; }
+public bool UseOcclusion { get; }
 ```
 
 #### Methods
@@ -1760,6 +2019,8 @@ public float SourceBaseVolumeDb { get; }
 public void SetBaseVolumeDb(float db);   // clamped to [-80, 20]; picked up on next solve
 public void Register();                  // manual registration (when playOnStart is false)
 public void Unregister();                // fades out cleanly, doesn't abruptly stop
+public void ApplyRolloffTo(AudioSource s);  // applies override (or defaults) to the emitter's AudioSource;
+                                            // called by AmbientEmitter.Initialize on acquire
 ```
 
 ---
@@ -1872,6 +2133,350 @@ public bool Enabled { get; }     // true if cullCheckFrameInterval > 0
 ```
 
 The culler's first tick runs immediately regardless of interval, so the solver never sees an empty graph during startup.
+
+---
+
+## Occlusion Mixer Slots
+
+Pre-built per-bus pools of mixer groups used as routing targets for SFX voices that need cutoff modulation. Replaces per-source `AudioLowPassFilter` (which clicked on Stop→Play biquad reset). See [Manual chapter 14](USER_GUIDE.md#14-occlusion-mixer-slot-pool) for architecture and design rationale.
+
+---
+
+### OcclusionLayout
+
+**Namespace:** `AudioSystem`
+**Inheritance:** `ScriptableObject`
+**Menu:** Create > Audio System > Occlusion Layout
+**Editor window:** Window > Audio System > Occlusion Layout
+
+Generated layout describing which mixer groups serve as occlusion slots for each user-authored bus. Authored at edit time by the Occlusion Layout Builder; consumed at runtime by `AudioManager` to build per-bus slot pools.
+
+One asset per project. Reference it from `AudioManager` ▸ Occlusion Layout.
+
+#### Properties
+
+```csharp
+public AudioMixer VoiceMixer { get; }
+public IReadOnlyList<BusEntry> Buses { get; }
+```
+
+`VoiceMixer` is the mixer the layout was generated against. At runtime, `AudioManager` refuses to build slot pools if its assigned `voiceMixer` doesn't match this — re-run the builder against the correct mixer.
+
+#### Nested Classes
+
+```csharp
+[Serializable]
+public sealed class BusEntry
+{
+    public AudioMixerGroup Bus;   // user-authored bus (e.g. Footsteps)
+    public SlotEntry[] Slots;     // generated occlusion slots under this bus
+}
+
+[Serializable]
+public sealed class SlotEntry
+{
+    public AudioMixerGroup MixerGroup;   // the slot's mixer group (voice's outputAudioMixerGroup)
+    public string CutoffParam;           // exposed parameter name for the slot's Lowpass cutoff
+    public SendEntry[] Sends;            // per-ReverbSendBus send params, indexed by registry order
+}
+
+[Serializable]
+public sealed class SendEntry
+{
+    public string RoomId;          // ReverbSendBus.BusName key
+    public string SendLevelParam;  // exposed mixer parameter name for the Send level (dB)
+}
+```
+
+---
+
+### OcclusionSlot
+
+**Namespace:** `AudioSystem`
+**Inheritance:** Plain `public sealed class` (not a Unity component)
+
+One slot inside a per-bus pool. Voices borrow a slot at acquire time (`AudioManager.GetVoice(container)`) and return it on `AudioManager.ReturnVoice(voice)`. While held, the voice's `outputAudioMixerGroup` is set to the slot's mixer group and any subsystem can modulate muffle by writing to the slot's exposed parameters.
+
+#### Fields
+
+```csharp
+public readonly AudioMixerGroup MixerGroup;            // voice routes through this
+public readonly string CutoffParam;                    // exposed Lowpass cutoff (Hz)
+public readonly int IndexInPool;                       // position inside the BusSlotPool
+public readonly AudioMixerGroup OwningBus;             // the user-authored bus this slot belongs to
+public readonly Dictionary<string, string> SendLevelParams;  // ReverbSendBus.BusName → exposed Send level param (dB)
+```
+
+All fields are `readonly` — the slot is immutable once authored. Modulating the slot at runtime means writing to the mixer via `voiceMixer.SetFloat(slot.CutoffParam, hz)` or `voiceMixer.SetFloat(slot.SendLevelParams[roomId], levelDb)`.
+
+`SendLevelParams` is empty when no `ReverbSendBusRegistry` was assigned at layout-generation time.
+
+---
+
+### AudioManager Slot Pool API
+
+The acquire/release surface lives on `AudioManager`. Most projects never call these directly — `AudioManager.GetVoice(container)` handles slot lifecycle automatically based on the container's opt-in flags. The public API is exposed for diagnostics and custom routing scenarios.
+
+#### Inspector Fields
+
+| Field                                  | Default | Description                                                                              |
+|----------------------------------------|---------|------------------------------------------------------------------------------------------|
+| `voiceMixer` (`VoiceMixer`)            | null    | The mixer asset hosting the occlusion slot groups. Must match `OcclusionLayout.VoiceMixer`. |
+| `occlusionLayout` (`OcclusionLayout`)  | null    | The generated layout asset. Required for slot pools to build at startup.                 |
+| `defaultOcclusionSlotsPerBus`          | 6       | Default slots-per-bus used by the Occlusion Layout Builder. Per-bus overrides live on the layout asset. |
+| `occlusionRayCount` (range 1–5)        | 3       | Rays per voice per occlusion tick. 1 = binary, 3+ = partial occlusion via blocked fraction. |
+| `occlusionRaySpreadMeters` (range 0–2) | 0.5     | Width of the side-ray spread at the source end (meters).                                 |
+| `occlusionGainSmoothingSeconds`        | 0.06    | Tau for per-frame exponential smoothing of `GainStack.OcclusionGain`.                    |
+| `occlusionCutoffSmoothingSeconds`      | 0.04    | Tau for per-frame exponential smoothing of the slot's mixer cutoff parameter.            |
+| `occlusionUpdateInterval`              | 0.2     | Seconds between OcclusionUpdate ticks (raycast cadence). Per-frame smoothing handles the in-between. |
+| `occlusionMask`                        | ~0      | Physics layer mask used by the occlusion raycast.                                        |
+
+#### Properties
+
+```csharp
+public AudioMixer VoiceMixer { get; }
+public OcclusionLayout OcclusionLayout { get; }
+public int DefaultOcclusionSlotsPerBus { get; }
+public bool OcclusionSlotPoolsReady { get; }
+```
+
+`OcclusionSlotPoolsReady` is `true` once `InitializeOcclusionSlotPools` ran successfully at `Awake` — i.e. both `voiceMixer` and `occlusionLayout` are assigned, they agree on which mixer the layout targets, and at least one bus entry produced a slot pool.
+
+#### Methods
+
+##### AcquireOcclusionSlot
+
+```csharp
+public OcclusionSlot AcquireOcclusionSlot(AudioMixerGroup bus)
+```
+
+Acquires a free slot from the pool owned by `bus`. Returns null if (a) no pool exists for the bus (the bus wasn't in the layout), (b) the slot pool isn't ready, or (c) all slots are in use (pool exhausted — voice plays unoccluded; a throttled warning is logged once per second per bus).
+
+Caller is responsible for calling `ReleaseOcclusionSlot` exactly once. The voice pool's `ReturnVoice` handles this for voices acquired via `GetVoice(container)`.
+
+##### ReleaseOcclusionSlot
+
+```csharp
+public void ReleaseOcclusionSlot(OcclusionSlot slot)
+```
+
+Returns the slot to its pool. Resets the slot's cutoff to 22 kHz and silences all reverb-send parameters so the next voice on this slot starts clean. Safe to call with null.
+
+##### GetOcclusionSlotsInUse / GetOcclusionSlotCapacity
+
+```csharp
+public int GetOcclusionSlotsInUse(AudioMixerGroup bus)
+public int GetOcclusionSlotCapacity(AudioMixerGroup bus)
+```
+
+Diagnostic counters. Both return `-1` if no pool exists for the given bus.
+
+**Example — runtime diagnostic HUD:**
+
+```csharp
+foreach (var bus in interestingBuses)
+{
+    int inUse = AudioManager.Instance.GetOcclusionSlotsInUse(bus);
+    int cap   = AudioManager.Instance.GetOcclusionSlotCapacity(bus);
+    GUI.Label(rect, $"{bus.name}: {inUse}/{cap} slots");
+}
+```
+
+---
+
+## Reverb Send Buses
+
+The "wet path" complement to occlusion. Source-side: voices in a tagged zone send to a per-zone reverb bus. Listener-side: each bus's parameters are driven from the listener's current zone profile. See [Manual chapter 15](USER_GUIDE.md#15-reverb-send-buses--per-zone-reverb) for architecture and design rationale.
+
+---
+
+### ReverbSendBus
+
+**Namespace:** `AudioSystem`
+**Inheritance:** `ScriptableObject`
+**Menu:** Create > Audio System > Reverb Send Bus
+
+One acoustic-space identity per asset. Owns one mixer group on the project's voice mixer, hosting one SFX Reverb effect with six exposed parameters that the listener-side driver writes per tick. The asset's `name` is the bus id.
+
+#### Properties — Mixer Wiring
+
+```csharp
+public AudioMixer ReverbMixer { get; }           // mixer this bus lives on
+public AudioMixerGroup ReverbBus { get; }        // mixer group this bus owns (auto-filled by Generate)
+public AudioMixerGroup OutputDestination { get; } // optional cross-mixer output target
+public AudioMixerGroup ParentGroup { get; }      // optional parent for the "ReverbsWet" return-bus convention
+public string MixerGroupGuid { get; }            // hidden idempotency key for re-Generate rename-safety
+```
+
+#### Properties — Parametric Defaults
+
+The 14 SFX Reverb parameters split into Basic and Advanced. Basic surfaces in the inspector by default; Advanced lives behind an EditorPrefs-backed foldout.
+
+```csharp
+// Basic
+public float DryLevel { get; }       // -10000..0 dB. Default -10000 (wet-only).
+public float Room { get; }           // -10000..0 dB
+public float DecayTime { get; }      //   0.1..20 s
+public float ReverbLevel { get; }    // -10000..2000 dB
+
+// Advanced
+public float RoomHF { get; }            // -10000..0 dB
+public float RoomLF { get; }            // -10000..0 dB
+public float DecayHFRatio { get; }      // 0.1..2 ratio
+public float ReflectionsLevel { get; }  // -10000..1000 dB
+public float ReflectionsDelay { get; }  // 0..0.3 s
+public float ReverbDelay { get; }       // 0..0.1 s
+public float HFReference { get; }       // 1000..20000 Hz
+public float LFReference { get; }       // 20..1000 Hz
+public float Diffusion { get; }         // 0..100 %
+public float Density { get; }           // 0..100 %
+```
+
+Only the six listener-relevant parameters (`ReverbLevel`, `DecayTime`, `Room`, `RoomHF`, `DecayHFRatio`, `ReflectionsLevel`) are exposed to the runtime driver. The other eight describe bus identity and stay at the SO-authored snapshot defaults.
+
+#### Identity Helpers
+
+```csharp
+public string BusName { get; }                    // sanitized form of asset.name, safe for mixer param ids
+public string ParamName(string suffix);           // "Reverb_<BusName>_<suffix>"
+
+public const string SuffixWet           = "Wet";           // → ReverbLevel
+public const string SuffixDecay         = "Decay";         // → DecayTime
+public const string SuffixRoom          = "Room";          // → Room
+public const string SuffixRoomHF        = "RoomHF";        // → RoomHF
+public const string SuffixDecayHFRatio  = "DecayHFRatio";  // → DecayHFRatio
+public const string SuffixReflections   = "Reflections";   // → ReflectionsLevel
+
+public void GetDefaultProfile(AudioReverbProfile dest);   // non-allocating copy of SO defaults into dest
+public static string SanitizeBusName(string raw);
+```
+
+`ParamName("Wet")` for a bus named "Bathroom" returns `"Reverb_Bathroom_Wet"` — that's the exposed mixer parameter the runtime driver writes to.
+
+`GetDefaultProfile` is the fallback path used by `AudioManager.DriveReverbBusParams` when no scene zone feeds this bus — the bus reverts to its SO-authored character.
+
+#### Editor Surface
+
+```csharp
+#if UNITY_EDITOR
+public void EditorSetReverbBus(AudioMixerGroup group);
+public void EditorSetOutputDestination(AudioMixerGroup group);
+public void EditorSetMixerGroupGuid(string guid);
+#endif
+```
+
+Called by the per-asset inspector's Generate path. Runtime treats the SO as read-only.
+
+---
+
+### ReverbSendBusRegistry
+
+**Namespace:** `AudioSystem`
+**Inheritance:** `ScriptableObject`
+**Menu:** Create > Audio System > Reverb Send Bus Registry
+
+Flat list of every `ReverbSendBus` asset in the project. One per project. Reference it from `AudioManager` ▸ Reverb Send Bus Registry.
+
+#### Properties
+
+```csharp
+public IReadOnlyList<ReverbSendBus> Buses { get; }
+public int BusCount { get; }
+```
+
+#### Methods
+
+```csharp
+public ReverbSendBus FindByName(string busName);  // case-sensitive lookup by ReverbSendBus.BusName
+```
+
+#### Editor Surface
+
+```csharp
+#if UNITY_EDITOR
+public void EditorSetBuses(List<ReverbSendBus> entries);
+#endif
+```
+
+Called by the Reverb Send Buses window's Refresh button after re-scanning the project for `t:ReverbSendBus` assets.
+
+---
+
+### AudioReverbProfile
+
+**Namespace:** `AudioSystem.Propagation`
+**Inheritance:** `[Serializable] public class`
+
+Per-zone reverb parameters, interpolatable across portal blend regions and copy-able into a non-allocating scratch buffer. Six fields, each matching one of the listener-relevant SFX Reverb parameters.
+
+#### Fields
+
+```csharp
+[Range(-10000f, 0f)]   public float Room             = -10000f;  // dB, overall wet gain
+[Range(-10000f, 0f)]   public float RoomHF           = 0f;       // dB, HF tilt
+[Range(0.1f, 20f)]     public float DecayTime        = 1.49f;    // seconds
+[Range(0.1f, 2f)]      public float DecayHFRatio     = 0.83f;    // ratio
+[Range(-10000f, 1000f)] public float ReflectionsLevel = -2602f;  // dB, early reflections
+[Range(-10000f, 2000f)] public float ReverbLevel      = 200f;    // dB, late reverb tail
+```
+
+Default (`Room = -10000`) is **inaudible** — zones that don't author a profile produce zero behavior change. Set `Room` toward 0 dB to enable.
+
+#### Methods
+
+```csharp
+public static void Lerp(AudioReverbProfile a, AudioReverbProfile b, float t, AudioReverbProfile dest);
+public void CopyFrom(AudioReverbProfile src);
+public bool IsEffectivelySilent { get; }   // true when Room ≤ -9999 dB
+public static readonly AudioReverbProfile Off;  // shared singleton, Room = -10000
+```
+
+`Lerp` and `CopyFrom` write into `dest` rather than returning a fresh instance, so the manager can blend across portal regions without per-frame allocation.
+
+---
+
+### AudioZone reverb fields
+
+`AudioZone` (see [Propagation section](#audiozone)) has two reverb-relevant fields:
+
+```csharp
+public AudioMixerGroup ReverbBus { get; }       // routing target (source-side)
+public AudioReverbProfile ReverbProfile { get; } // character (listener-side)
+```
+
+- **`ReverbBus`** — the mixer group voices physically in this zone send to. Drag in a `ReverbSendBus`'s `ReverbBus` field. Leave null for zones with no dedicated reverb (the source-side send is skipped for sources in that zone). Returns null at runtime when explicitly left empty.
+- **`ReverbProfile`** — drives the bus's six runtime parameters when the listener is in this zone. Never null at runtime (defaults to `AudioReverbProfile.Off` when unassigned).
+
+Multi-zone-to-bus aggregation is supported — several zones can share a `ReverbBus`. The listener-side driver picks the canonical zone (listener's own if it feeds the bus, else first registered via `PropagationManager.FindFirstZoneFeedingBus`).
+
+---
+
+### AudioManager Reverb-Sends API
+
+#### Inspector Fields
+
+| Field                                                    | Default | Description                                                                                  |
+|----------------------------------------------------------|---------|----------------------------------------------------------------------------------------------|
+| `reverbSendBusRegistry` (`ReverbSendBusRegistry`)        | null    | Project's bus registry. Reverb-sends driver is gated on this being assigned and non-empty.   |
+| `reverbSendsUpdateInterval` (range 0.005–0.5)            | 0.05    | Seconds between reverb-sends + bus-params driver ticks (default ≈ 20 Hz).                    |
+
+#### Property
+
+```csharp
+public ReverbSendBusRegistry ReverbSendBusRegistry { get; }
+```
+
+#### Synchronous Send Write
+
+```csharp
+public void WriteReverbSendsImmediate(AudioVoiceEnhanced voice, AudioContainer container);
+```
+
+Synchronous per-voice send-level write, called by `AudioContainer.ConfigureAudioSource` right after the source has been positioned and routed. Ensures a voice's first audio frame already carries correct reverb routing, without waiting for the next driver tick (≈ 50 ms latency).
+
+Safe to call when the registry is empty / mixer missing / voice has no slot / container opts out — the internal guards short-circuit and the call becomes a no-op.
+
+Most projects never call this directly — `AudioContainer.ConfigureAudioSource` does. Surfaced publicly for custom playback paths that bypass the standard `Play()` route.
 
 ---
 
@@ -2080,6 +2685,27 @@ mh.UpdatePositions(newTransforms);
 
 ## Version History
 
+**v2.5.0** - May 2026
+- **New subsystem: Occlusion Mixer Slot Pool** — per-bus pre-built mixer-slot pools replace per-source `AudioLowPassFilter`s. Eliminates the per-acquire biquad-reset click; cutoff modulation is a stable mixer-side write. See [Manual chapter 14](USER_GUIDE.md#14-occlusion-mixer-slot-pool).
+  - `OcclusionLayout` + `OcclusionSlot` types
+  - `AudioManager.AcquireOcclusionSlot` / `ReleaseOcclusionSlot` and slot-pool diagnostics
+  - Multi-ray partial occlusion (`occlusionRayCount`, `occlusionRaySpreadMeters`) — N-level edge gradient instead of binary
+  - Per-frame exponential smoothing via `occlusionGainSmoothingSeconds` / `occlusionCutoffSmoothingSeconds`
+  - Occlusion Layout Builder window (`Window > Audio System > Occlusion Layout`)
+- **New subsystem: Reverb Send Buses & Per-Zone Reverb** — source-side routing + listener-side bus-character driver. SFX voices contribute to the reverb of the room they're fired in; each bus's character is driven from the listener's current zone profile. See [Manual chapter 15](USER_GUIDE.md#15-reverb-send-buses--per-zone-reverb).
+  - `ReverbSendBus` (one acoustic-space identity per asset) + `ReverbSendBusRegistry`
+  - `AudioReverbProfile` (six listener-relevant SFX Reverb params)
+  - `AudioZone.ReverbBus` (routing target) + `AudioZone.ReverbProfile` (character)
+  - `AudioManager.WriteReverbSendsImmediate` — synchronous on-Play write so first audio frame carries correct routing
+  - `AudioContainer` opt-in flags: `AllowReverbSend`, `ReverbSendLevelDb`, `StaticEmitter`, `ExplicitReverbBus`
+  - Reverb Send Buses window (`Window > Audio System > Reverb Send Buses`) + per-asset Generate/Validate/Apply/Pull inspector
+- **AudioContainer routing flags** — `UseOcclusion`, `UsePropagation`, `AllowReverbSend` opt SFX containers into the new slot pool. `UseOcclusion` enables raycast occlusion; `UsePropagation` composes propagation cutoff into the same voice via most-muffled-wins (min cutoff, multiplicative gain). The two routing/muffling subsystems now integrate cleanly with the propagation subsystem from v2.3.0.
+- **Soft zone boundaries** — `AudioZone.entryFadeMeters` smooths reverb sends, listener-side reverb character, and `BaseVolumeDb` across the zone surface. 0 (default) preserves the v2.3.0 binary boundary.
+- **Outside-the-graph behavior** — `PropagationManager.silenceOutsideGraph` toggle picks between whitelist mode (outside = audible, default) and complete-coverage mode (outside = silent + muffled).
+- **Reachability-preserving culler** — `PropagationProximityCuller` now keeps zones reachable through near portals active even when individually out of activation-radius range. Two-zone-via-portal scenes no longer fall silent on tight radii.
+- **Higher default solve rate** — `PropagationManager.solveRateHz` default 8 → 15 (≈ 67 ms cache step). Fast zone-trigger crossings and partially-closed-portal transitions no longer surface audible step changes.
+- **Lower default open low-pass** — `AudioPortal.openLowPassHz` default 18000 → 12000. A portal without a door source is now audibly distinct from full transparency on typical speakers, surfacing authoring mistakes early.
+
 **v2.3.0** - April 2026
 - **New subsystem: `AudioSystem.Propagation`** — zone/portal graph-based routing for ambient beds
 - `AudioZone` / `AudioPortal` MonoBehaviours (authoring)
@@ -2130,8 +2756,8 @@ mh.UpdatePositions(newTransforms);
 
 ---
 
-*For tutorials, see [COOKBOOK.md](2_COOKBOOK.md)*
-*For deep knowledge, see [MANUAL.md](3_MANUAL.md)*
-*For quick start, see [QUICK_START.md](1_QUICK_START.md)*
+*For tutorials, see [Cookbook](USER_GUIDE.md#3-cookbook) in the User Guide*
+*For deep knowledge, see [Manual](USER_GUIDE.md#4-manual) in the User Guide*
+*For quick start, see [Quick Start](USER_GUIDE.md#2-quick-start) in the User Guide*
 
-*SFX System v2.3.0 - Professional Audio Middleware for Unity*
+*SFX System v2.5.0 - Professional Audio Middleware for Unity*

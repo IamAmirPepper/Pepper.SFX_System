@@ -1,9 +1,9 @@
 {
   "name": "com.pepper.sfx",
   "displayName": "Pepper's SFX System",
-  "version": "2.3.3",
+  "version": "2.5.0",
   "unity": "6000.0",
-  "description": "Modular sound effects system for Unity.",
+  "description": "Audio middleware for Unity — events, containers, hierarchical buses, mixer-slot occlusion, per-zone reverb, and portal-driven propagation.",
   "author": {
     "name": "Amir",
     "email": "amirpepper96@gmail.com"
@@ -11,5 +11,5 @@
 
   "documentationUrl": "https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~",
 
-  "keywords": ["audio", "sfx","sound"]
+  "keywords": ["audio", "sfx", "sound", "reverb", "propagation", "occlusion"]
 }
