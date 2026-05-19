@@ -488,6 +488,29 @@ Drag it into the portal's `Door Source` field. Closed → `closedTransmission` a
 
 ## 3. Cookbook
 
+This section is organized around tasks, not features. Each recipe walks one outcome from asset creation through code.
+
+**Three ways to read this section — every recipe serves all three:**
+- 🏃 **Skimmer:** Read the recipe titles and the bolded step labels. Skip the prose. The ordered lists at the top of each topic are the map.
+- 📖 **Learner:** Read each recipe top to bottom. Each one is self-contained and explains *why* alongside *how*.
+- 🔍 **Reference reader:** Jump to the recipe whose title matches your task. Use the Table of Contents.
+
+> ## ⚠️ Read this before doing anything spatial
+>
+> **Occlusion, Per-Zone Reverb, and container-level Ambient Propagation all share one piece of infrastructure: the Occlusion Slot Pool.**
+>
+> On every play, the system checks:
+>
+> ```
+> wantsSlot = container.UseOcclusion || container.AllowReverbSend || container.UsePropagation
+> ```
+>
+> If *any* of those three flags is on and the slot pool has not been authored, the voice silently falls back to direct-to-bus routing. No muffling. No reverb sends. No container propagation. **No error.** You will configure everything else correctly and hear nothing change.
+>
+> **You must author the Occlusion Slot Pool first**, before touching reverb buses, zones, or container flags. Do it here: [Occluding SFX Through Geometry → One-Time Project Setup](#recipe-one-time-project-setup-5-minutes).
+>
+> Exception: the `AmbientSource` propagation path (rain, wind, ambient beds) uses a separate emitter pool and does *not* require slots. Only container-level `UsePropagation` does.
+
 ### Setup & Organization
 
 #### Recipe: First-Time Project Setup (10 minutes)
@@ -2488,6 +2511,25 @@ public class AudioEventLogger : MonoBehaviour
 
 SFX voices can be muffled when walls or props stand between the listener and the emitter. The mechanism is the occlusion mixer slot pool (see Manual chapter 14 for the architecture). This section walks the authoring once, then shows how to opt individual containers into the system.
 
+> 🧱 **This is the foundation for two other features too.** Per-Zone Reverb (`AllowReverbSend`) and container-level Ambient Propagation (`UsePropagation`) both acquire the **same Occlusion Slot** at play time. If you skip the slot-pool authoring in *One-Time Project Setup* below, none of the three features will work — voices silently fall back to direct-to-bus routing with no muffling, no sends, no propagation, and no error message. Author the layout once; opt individual containers in afterward.
+
+> ⚠️ **Silent failures to know up front**
+> - No `OcclusionLayout` authored → containers with `Use Occlusion` (or `Allow Reverb Send`, or `Use Propagation`) play without effect. No error.
+> - Container's `Mixer Group` not in the layout's bus list → slot acquisition skipped silently. Re-run the builder after adding new buses.
+> - 2D voices (Is3D = ✗) ignore raycast occlusion. The flag still costs a slot acquire — turn it off for UI/2D containers.
+> - Slot pool exhausted → new voices route direct-to-bus (no occlusion) and a console warning fires. Bump *Slots Per Bus* if you see it.
+
+#### Setup Path
+
+Follow these in order. Steps 1–2 are required; the rest are per-container or per-feature opt-ins.
+
+1. **One-Time Project Setup** — author the slot pool. *Do this once per project.*
+2. **Occlude a Container** — flip `Use Occlusion` on each container that should be muffled.
+3. *(Optional)* **Soften the Edge with Multi-Ray** — multi-ray smoothing.
+4. *(Optional)* **Compose with Propagation** — let one container respect both walls and doors.
+
+---
+
 #### Recipe: One-Time Project Setup (5 minutes)
 
 📋 **What:** Author the slot layout so any container with `Use Occlusion = true` can be muffled at runtime.
@@ -2648,9 +2690,29 @@ When the listener is outside every registered AudioZone, propagation has no opin
 
 ### Per-Zone Reverb
 
-The "wet path" sibling of the occlusion section. SFX voices send a copy of their dry signal to a per-zone reverb bus; the bus's character is driven from the listener's zone profile. Two distinct authoring steps: (1) create a `ReverbSendBus` asset per acoustic space, (2) tag your `AudioZone`s with which bus they feed and what character they have. See Manual chapter 15 for the architecture.
+The "wet path" sibling of the occlusion section. SFX voices send a copy of their dry signal to a per-zone reverb bus; the bus's character is driven from the listener's zone profile. See Manual chapter 15 for the architecture.
 
-#### Recipe: Author Your First Reverb Send Bus (5 minutes)
+> 🧱 **Prerequisite: the Occlusion Slot Pool must already be authored.** Reverb sends are written into the voice's occlusion slot — no slot, no sends. If you haven't done it yet, jump to [Occluding SFX Through Geometry → One-Time Project Setup](#recipe-one-time-project-setup-5-minutes) first. Come back here once the layout exists.
+
+> ⚠️ **Silent failures to know up front**
+> - `ReverbProfile.Room = -10000 dB` is the **default** and means *no reverb*. A freshly-tagged zone is silent until you raise it (try `0` dB).
+> - The `Reverb Bus` field on `AudioZone` wants the **mixer group reference** inside the SendBus asset — not the SendBus asset itself. Drag from the SendBus's `ReverbBus` field, not from the Project window.
+> - `AudioManager.Reverb Send Bus Registry` must be assigned. Without it, the registry is empty and nothing routes.
+> - After adding a new bus, **re-run the Occlusion Layout Builder** so existing slots get the new bus's Send parameter authored. Skipping this means existing containers can't send to the new bus.
+
+#### Setup Path
+
+Follow these in order. Each recipe assumes the previous one is done.
+
+1. **Author a Reverb Send Bus** — once per acoustic archetype (small room, large hall, outdoors).
+2. **Tag a Zone to Use This Bus** — for each physical room in your scene.
+3. **Send an SFX Container Into the Reverb** — flip the per-sound `Allow Reverb Send` flag.
+4. *(Optional)* **Override Routing for Music or Narration** — for sounds with authored, non-zone-driven character.
+5. *(Optional)* **Tune a Bus's Character While Editing** — iteration workflow.
+
+---
+
+#### Recipe: Author a Reverb Send Bus
 
 📋 **What:** Create a single reverb bus and wire it up so voices physically in a tagged zone send to it.
 
@@ -2836,10 +2898,28 @@ Use when the mixer window's UI is more convenient (it has the per-parameter slid
 
 **New in v2.3.0.** Zone/portal routing for long-running ambient beds (rain, wind, machinery, river). The propagation subsystem ships *alongside* the SFX event pipeline — both systems coexist on the same AudioManager and mixer. Use SFX events for discrete sounds, propagation for persistent environmental beds that need to route through geometry.
 
-**Prerequisites before these recipes:**
-- A scene with an `AudioManager` + `AudioListener`
-- The `Ambience` mixer group (or any `AudioMixerGroup` you want ambient beds routed through — propagation does not bypass your mix bus)
-- The listener GameObject has an `Audio/Propagation/Audio Listener Zone Tracker` component
+> 🧱 **Two propagation paths, only one needs slots.**
+> - **`AmbientSource` path** (the recipes in this section: rain, doors, weather) uses its own `AmbientEmitter` pool. **No occlusion slots required.** Author zones, portals, and ambient sources and you're done.
+> - **Container `Use Propagation` path** (an `AudioContainer` with the `Use Propagation` flag — see [Compose Occlusion with Propagation](#recipe-compose-occlusion-with-propagation) in the Occlusion topic) acquires an Occlusion Slot exactly like reverb sends do. **That path needs the Occlusion Slot Pool authored first.**
+
+> ⚠️ **Silent failures to know up front**
+> - Listener GameObject missing the `Audio Listener Zone Tracker` component → listener's zone is always null, all propagation is silent.
+> - Portal collider doesn't overlap both zone colliders by ≥ 5 cm → portal is rejected in `OnValidate`. Check the inspector for the red error.
+> - Portal +Z not pointing through the opening → blend axis is wrong, sound doesn't pan toward the gap.
+> - Loop boundary click in your clip → the emitter loops as-authored, Unity won't fix a bad seam. Crossfade the WAV.
+> - Outdoor source zone with finite `activationRadius` → source culls when the listener walks deep indoors. Use `float.PositiveInfinity` for sky/world sources.
+
+#### Setup Path
+
+For each ambient bed you want, follow these in order:
+
+1. **Define Zones** — author one `AudioZone` per acoustic space.
+2. **Connect with Portals** — one `AudioPortal` per doorway/window between zones.
+3. **Add an Ambient Source** — looping clip + source zone.
+4. *(Optional)* **Door Source** — drive a portal's open/closed state from a game system.
+5. *(Optional)* **Intensity Driver** — script-control the source's base volume.
+
+**Scene prerequisites** (one-time): `AudioManager` + `AudioListener` in the scene; an `Ambience` mixer group (or any group of your choice); the listener has the `Audio Listener Zone Tracker` component. Recipes below assume these are in place.
 
 ---
 
@@ -3147,14 +3227,15 @@ Before reading this manual, you should:
 
 #### 1.3 How to Use This Manual
 
-**For New Users:**
-Read sections 1-6 in order to build a complete mental model of the system.
+This manual is dense by design — every chapter has to serve three different readers:
 
-**For Experienced Users:**
-Jump to specific sections as needed. Use the Table of Contents.
+- 🏃 **Skimmer:** Read each chapter's intro paragraph and the §X.1 ("Why...") subsection. That builds a map. Come back for details when you actually need them.
+- 📖 **Learner:** Read chapters 1–6 in order to build a complete mental model, then read the subsystem chapters (13, 14, 15) as you adopt those features.
+- 🔍 **Reference reader:** Jump to the section whose title matches your question. Use the Table of Contents at the top.
 
-**For Troubleshooting:**
-Skip to Section 12 for common issues and solutions.
+**For Troubleshooting:** Skip to Section 12 for common issues and diagnoses.
+
+> ⚠️ **Spatial audio (Occlusion, Reverb Sends, container Propagation) shares one piece of infrastructure: the Occlusion Slot Pool (Chapter 14).** If you plan to use any of these features, author the slot pool first or none of them will work. The Cookbook's [spatial-audio prerequisite callout](#3-cookbook) explains why.
 
 #### 1.4 Companion Documents
 
