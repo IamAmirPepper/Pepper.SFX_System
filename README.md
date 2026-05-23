@@ -114,7 +114,7 @@ To pin to a specific version, append `#v2.5.0` (or any tag/branch) to the URL.
 
 ---
 
-## What's new in 2.5.0
+## What's new in 2.5.2
 
 - **Occlusion Mixer Slot Pool** — voice-side occlusion rewrite. No more per-source filter rebuild clicks.
 - **Reverb Send Buses + Per-Zone Reverb** — full per-room reverb subsystem with auto-authoring.

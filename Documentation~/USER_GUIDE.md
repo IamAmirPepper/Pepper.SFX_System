@@ -2690,12 +2690,12 @@ When the listener is outside every registered AudioZone, propagation has no opin
 
 ### Per-Zone Reverb
 
-The "wet path" sibling of the occlusion section. SFX voices send a copy of their dry signal to a per-zone reverb bus; the bus's character is driven from the listener's zone profile. See Manual chapter 15 for the architecture.
+The "wet path" sibling of the occlusion section. SFX voices send a copy of their dry signal to a per-zone reverb bus; each bus's character is defined by its `ReverbSendBus` asset, which is the single source of truth (the zone only decides *which* bus a voice sends to). See Manual chapter 15 for the architecture.
 
 > 🧱 **Prerequisite: the Occlusion Slot Pool must already be authored.** Reverb sends are written into the voice's occlusion slot — no slot, no sends. If you haven't done it yet, jump to [Occluding SFX Through Geometry → One-Time Project Setup](#recipe-one-time-project-setup-5-minutes) first. Come back here once the layout exists.
 
 > ⚠️ **Silent failures to know up front**
-> - `ReverbProfile.Room = -10000 dB` is the **default** and means *no reverb*. A freshly-tagged zone is silent until you raise it (try `0` dB).
+> - A bus's character lives on its `ReverbSendBus` asset, **not** the zone. A bus whose SO `Room` is at `-10000 dB` (the default) is silent until you raise it (try `0` dB). Tagging a zone and pointing its `Reverb Bus` at that asset routes voices there, but the *sound* comes from the asset.
 > - The `Reverb Bus` field on `AudioZone` wants the **mixer group reference** inside the SendBus asset — not the SendBus asset itself. Drag from the SendBus's `ReverbBus` field, not from the Project window.
 > - `AudioManager.Reverb Send Bus Registry` must be assigned. Without it, the registry is empty and nothing routes.
 > - After adding a new bus, **re-run the Occlusion Layout Builder** so existing slots get the new bus's Send parameter authored. Skipping this means existing containers can't send to the new bus.
@@ -2874,13 +2874,13 @@ Use when the mixer window's UI is more convenient (it has the per-parameter slid
 **"My voice has `Allow Reverb Send = ✓` but I hear no wet tail."**
 - Confirm `AudioManager.ReverbSendBusRegistry` is assigned and contains at least one bus.
 - Confirm the source's zone has its `ReverbBus` field set to a bus that's in the registry.
-- Confirm the zone's `ReverbProfile.Room` isn't at -10000 dB (the silent default — change to 0 or a moderate negative value).
+- Confirm the bus's `ReverbSendBus` asset isn't silent: a parametric bus with `Room` at -10000 dB (the default) produces no tail — raise it toward 0. A convolution bus with no `Impulse Response` assigned is likewise silent.
 - Confirm the listener can reach the source's zone (unreachable zones produce audibility = 0).
 - Confirm the container's `Mixer Group` is a bus that appears in the Occlusion Layout's bus list — without a slot, there are no Send level params to write to.
 
-**"I hear reverb everywhere but it always sounds like the same room."**
-- The listener-side driver fallback writes the *first registered zone's* profile when the listener is outside any bus-feeding zone. Look at the registry order — first-in-list wins for the fallback.
-- This is sometimes desirable (have a "default outdoor character" zone first in the list) and sometimes not. Reorder the registry assets if needed.
+**"Several zones share one bus and they all sound identical."**
+- This is **by design** as of the source-of-truth unification: a bus has one acoustic identity, defined by its `ReverbSendBus` asset, regardless of which zone routed the voice to it. Per-zone variation on a *shared* bus is no longer supported.
+- If you need Cathedral and Cathedral_Crypt to sound different, give them **separate** `ReverbSendBus` assets and point each zone's `ReverbBus` at its own.
 
 **"I added a new ReverbSendBus but it doesn't appear in the dropdowns."**
 - Open Window ▸ Audio System ▸ Reverb Send Buses and click Refresh. The registry only updates when refreshed.
@@ -7019,31 +7019,27 @@ Neither is correct alone. Real acoustics combine both:
 - **Routing is source-driven**: a voice's contribution goes to the reverb of the room it's *physically in*.
 - **Character is room-driven**: each reverb bus represents one acoustic space, and its parameters don't change just because the listener walked to a different room.
 
-The Reverb Send Bus subsystem implements this split. **Source-side: which bus a voice sends to is determined by the voice's zone.** **Listener-side: each bus's parameters are driven from that bus's canonical zone profile.** Walking from the bathroom to the cathedral doesn't change which bus the bathroom gunshot is sending to — and doesn't change what the bathroom bus sounds like. Only the listener's *audibility weight* to that bus changes (the muffled "I can still hear it through the wall" attenuation), and that's handled by the propagation subsystem feeding the source-side audibility cache.
+The Reverb Send Bus subsystem implements this split. **Source-side: which bus a voice sends to is determined by the voice's zone.** **Listener-side: each bus's character is its own — defined by the bus's `ReverbSendBus` asset, the single source of truth.** Walking from the bathroom to the cathedral doesn't change which bus the bathroom gunshot is sending to — and doesn't change what the bathroom bus sounds like. Only the listener's *audibility weight* to that bus changes (the muffled "I can still hear it through the wall" attenuation), and that's handled by the propagation subsystem feeding the source-side audibility cache.
 
 #### 15.2 Mental Model
 
 ```
-                                                                  ┌──────────────┐
-   AudioZone "Bathroom"        ────source-side────►   Reverb_Bathroom (a bus)   │
-     .ReverbBus = Reverb_Bathroom (this routing)                │                │
-     .ReverbProfile = {...}    ─────listener-side─►   bus character ↑           │
-                                                                │     dries to   │
-                                                                │     mixer      │
-                                                                └────────────────┘
+   Two independent axes per voice:
 
-   AudioZone "Cathedral"       ────source-side────►   Reverb_Cathedral (a bus)
-     .ReverbBus = Reverb_Cathedral                              ↑
-     .ReverbProfile = {...}    ─────listener-side─►   bus character
+   ROUTING (source-side) — set on the AudioZone, decides which bus voices send to:
+     AudioZone "Bathroom"   .ReverbBus = Reverb_Bathroom   ──►  send to Reverb_Bathroom bus
+     AudioZone "Cathedral"  .ReverbBus = Reverb_Cathedral  ──►  send to Reverb_Cathedral bus
+     AudioZone "Hallway"    .ReverbBus = (none)            ──►  no reverb sends from this zone
 
-   AudioZone "Hallway"
-     .ReverbBus = (none)       ────────────────────►   (no reverb sends from this zone)
-     .ReverbProfile = silent
+   CHARACTER (listener-side) — set on the ReverbSendBus asset, the single source of truth:
+     ReverbSendBus "Reverb_Bathroom"   ──►  parametric params  OR  impulse response
+     ReverbSendBus "Reverb_Cathedral"  ──►  parametric params  OR  impulse response
+     (a bus's sound never depends on listener position or on any zone)
 ```
 
 - **Voices** in the Bathroom zone whose container has `Allow Reverb Send = ✓` send a copy of their dry signal to `Reverb_Bathroom` at the container's authored level, scaled by the listener's audibility weight (1.0 same-zone, <1 through portals, 0 unreachable).
-- **The `Reverb_Bathroom` bus** is one mixer group on the project's voice mixer. It carries an SFX Reverb effect whose six listener-relevant parameters are exposed to the runtime via `AudioMixer.SetFloat`.
-- **The bus's parameters** are driven each tick from the canonical Bathroom zone's `ReverbProfile` — when the listener is *in* the bathroom that's the active zone, when the listener is elsewhere it's the first registered Bathroom zone or the bus's own authored defaults.
+- **The `Reverb_Bathroom` bus** is one mixer group on the project's voice mixer. For a parametric bus it carries an SFX Reverb effect whose six listener-relevant parameters are exposed to the runtime via `AudioMixer.SetFloat`; for a convolution bus it carries the native convolution plugin (see §15.14).
+- **The bus's character** comes entirely from its `ReverbSendBus` asset. For a parametric bus, the runtime driver writes the asset's six parameters onto the mixer effect each tick. The character does not depend on the listener's position or on any zone's profile — the asset *is* the room's identity.
 
 #### 15.3 The Two Halves Working Together
 
@@ -7051,11 +7047,11 @@ The clean separation between routing and character produces these expected behav
 
 | Scenario                                                | Source-side (which bus) | Listener-side (bus character) | Audibility scaling |
 |---------------------------------------------------------|-------------------------|-------------------------------|---------------------|
-| Listener in bathroom, gunshot in bathroom               | Bathroom                | Bathroom profile              | 1.0 (same zone)     |
-| Listener in hallway, gunshot in bathroom (door open)    | Bathroom                | Bathroom profile              | ~0.3 (portal loss)  |
-| Listener in hallway, gunshot in bathroom (door closed)  | Bathroom                | Bathroom profile              | ~0.05 (closed door) |
-| Listener in cathedral, gunshot in bathroom (no path)    | Bathroom                | Bathroom profile              | 0 (unreachable)     |
-| Listener in cathedral, choir voice in cathedral         | Cathedral               | Cathedral profile             | 1.0                 |
+| Listener in bathroom, gunshot in bathroom               | Bathroom                | Bathroom bus character        | 1.0 (same zone)     |
+| Listener in hallway, gunshot in bathroom (door open)    | Bathroom                | Bathroom bus character        | ~0.3 (portal loss)  |
+| Listener in hallway, gunshot in bathroom (door closed)  | Bathroom                | Bathroom bus character        | ~0.05 (closed door) |
+| Listener in cathedral, gunshot in bathroom (no path)    | Bathroom                | Bathroom bus character        | 0 (unreachable)     |
+| Listener in cathedral, choir voice in cathedral         | Cathedral               | Cathedral bus character       | 1.0                 |
 
 The bathroom gunshot keeps sounding like a bathroom gunshot regardless of where the listener stands — only its loudness changes based on the listener's audibility to the bathroom. Two different voices in two different zones send to two different reverb buses, both running simultaneously, each carrying its own room's character.
 
@@ -7063,7 +7059,7 @@ The bathroom gunshot keeps sounding like a bathroom gunshot regardless of where 
 
 One ScriptableObject per acoustic space identity in the project. Create via Project ▸ Create ▸ Audio System ▸ Reverb Send Bus, name it after the room (e.g. `Reverb_Bathroom`).
 
-Two layers of fields:
+Three layers of fields:
 
 **Mixer wiring** (top of inspector):
 
@@ -7078,6 +7074,18 @@ Two layers of fields:
 
 - **Basic (4)**: `DryLevel`, `Room`, `DecayTime`, `ReverbLevel` — the parameters 80% of tuning happens on.
 - **Advanced (10)**, behind an EditorPrefs-backed foldout that's closed by default: `RoomHF`, `RoomLF`, `DecayHFRatio`, `ReflectionsLevel`, `ReflectionsDelay`, `ReverbDelay`, `HFReference`, `LFReference`, `Diffusion`, `Density`.
+
+These parametric defaults apply only when `Use Convolution` is **off**. When it's on, the bus ignores them and uses the impulse response instead.
+
+**Convolution** (the alternative to the parametric reverb — see §15.14 for the full walkthrough):
+
+| Field                   | Purpose                                                                                                  |
+|-------------------------|----------------------------------------------------------------------------------------------------------|
+| `Use Convolution`       | Off by default. When on, the bus uses a real impulse response (native convolution plugin) instead of the parametric SFX Reverb. The parametric fields above are ignored. |
+| `Impulse Response`      | The IR `AudioClip` to convolve with. Must be CPU-readable — set its import **Load Type** to *Decompress On Load* or *PCM*. Mono or stereo (downmixed to mono in v1). Required when `Use Convolution` is on, or the bus is silent. |
+| `Convolution Wet Trim`  | Wet output trim in dB (range -80…+20). 0 = unity. The live, cheap level control for the convolution wet path. |
+
+A fourth convolution field, the IR *slot index*, is auto-assigned by Generate and hidden from the inspector — designers never set it.
 
 The asset's **name is the bus id**. Sanitization strips characters that would produce invalid Unity exposed-parameter identifiers; a bus named `Cave (small)` becomes `Cavesmall` for parameter naming. Rename the asset and the bus identity follows.
 
@@ -7100,7 +7108,7 @@ Two complementary editor UIs:
 
 | Button                    | What it does                                                                                                            |
 |---------------------------|-------------------------------------------------------------------------------------------------------------------------|
-| **Generate Mixer Group**  | Creates or finds the bus's mixer group, drops an SFX Reverb effect on it, writes the SO's parametric defaults to the target snapshot, exposes the six runtime-driven parameters under schema names, and backfills `ReverbBus` on the SO. Idempotent. |
+| **Generate Mixer Group**  | Creates or finds the bus's mixer group and backfills `ReverbBus` on the SO. For a **parametric** bus: drops an SFX Reverb effect, writes the SO's parametric defaults to the target snapshot, and exposes the six runtime-driven parameters under schema names. For a **convolution** bus (`Use Convolution = on`): drops the native SFX Convolution Reverb plugin instead, assigns a free IR slot, and authors its IR Slot / Wet Trim / IR Gain params. Switching the toggle and re-generating auto-cleans the previous effect. Idempotent. |
 | **Validate Wiring**       | Read-only health check. Reports "Wiring OK" or a bullet list of issues (missing mixer, missing effect, missing exposed param, mismatched OutputDestination, ParentGroup mismatch). |
 | **Apply Params → Mixer**  | Pushes the SO's parametric values into the existing mixer effect without re-running the group/expose work. Use after tweaking parametric values on the SO that you want reflected on the mixer side. |
 | **Pull Params ← Mixer**   | Copies the mixer effect's current values back onto the SO. Use after tweaking the mixer-window sliders that you want reflected on the SO side. |
@@ -7131,25 +7139,25 @@ Unity's SFX Reverb effect has 14 parameters. Generate exposes six:
 
 These match the 1:1 field set on `AudioReverbProfile` — they're the six parameters that **describe a room's identity in a way that varies meaningfully between rooms**. Cathedral and bathroom differ on these six.
 
-The other eight (DryLevel, RoomLF, ReflectionsDelay, ReverbDelay, HFReference, LFReference, Diffusion, Density) are bus identity rather than zone identity — they describe *how this reverb is shaped*, not *which room it is*. They stay at the SO-authored values and aren't driven at runtime.
+The other eight (DryLevel, RoomLF, ReflectionsDelay, ReverbDelay, HFReference, LFReference, Diffusion, Density) are static shaping rather than runtime-driven character — they describe *how this reverb is shaped* and stay at the SO-authored snapshot values, not written each tick.
 
 The exposed-parameter names follow the schema `Reverb_<BusName>_<Suffix>`. The constants live on `ReverbSendBus` (`SuffixWet`, `SuffixDecay`, …) so authoring and runtime can't drift out of name agreement.
 
+This whole six-parameter mechanism applies to **parametric** buses only. A convolution bus exposes no SFX Reverb params (its character is the impulse response) and is skipped by the listener-side driver — see §15.14.
+
 #### 15.8 The AudioZone Side
 
-Each zone has two fields that connect it to the reverb subsystem:
+The zone's connection to the reverb subsystem is **routing only** — a single field:
 
 ```csharp
 public AudioMixerGroup ReverbBus;       // routing target (source-side)
-public AudioReverbProfile ReverbProfile; // character (listener-side)
 ```
 
 - **`ReverbBus`** is the mixer group voices physically in this zone send to (when their container has `Allow Reverb Send = ✓`). Drag in the `ReverbBus` field from a `ReverbSendBus` asset. Leave null for zones that don't have a dedicated reverb (the source-side send is then skipped for sources in that zone).
-- **`ReverbProfile`** describes the six listener-relevant reverb parameters for this zone. Defaults to a silent profile (`Room = -10000 dB`), so zones that don't author a profile produce zero behavior change vs. a setup without reverb. Tune `Room` toward 0 dB to enable.
 
-A zone's `ReverbProfile.Room` set toward 0 dB is the "yes, this room sounds reverberant" enable switch — leaving it at the default -10000 keeps the zone silent on the listener side even if it has a `ReverbBus` assigned. A custom inspector on `AudioZone` will warn when a profile is at silence so designers don't dial in `DecayTime` and wonder why it doesn't ring.
+> **Source-of-truth note (changed 2026-05-21).** The zone no longer carries any reverb *character* — the old `AudioZone.ReverbProfile` field was removed. A bus's character lives entirely on its `ReverbSendBus` asset, which is now the single source of truth. To make a room "sound reverberant," tune the parameters (or assign an IR) on the bus asset, not on the zone. The zone only decides *which* bus voices route to (and, via `entryFadeMeters`, how that send fades across the zone boundary).
 
-Multiple zones can feed the same bus (e.g. `Cathedral` and `Cathedral_Crypt` both pointing at `Reverb_Cathedral`). The listener-side driver picks the canonical zone for that bus: the listener's own zone if it feeds the bus, otherwise `PropagationManager.FindFirstZoneFeedingBus` (linear scan over registered zones). Useful for naming variants of an acoustic space without doubling the bus count.
+Multiple zones can feed the same bus (e.g. `Cathedral` and `Cathedral_Crypt` both pointing at `Reverb_Cathedral`) — useful for routing several rooms to one shared acoustic identity. Because character is now per-bus, **every zone feeding a given bus produces that bus's single character**; there is no per-zone variation on a shared bus. If you need two rooms to sound different, give them separate bus assets.
 
 #### 15.9 The Source-Side Runtime: `AudioManager.ReverbSends`
 
@@ -7171,14 +7179,13 @@ The per-tick `AudioMixer.SetFloat` on the slot's `SendLevelParams[bus.BusName]` 
 
 The "what does each bus sound like" half. Same coroutine, same cadence. Per tick, per registered bus:
 
-1. **Pick the canonical zone for this bus**:
-   - The listener's current zone if it feeds this bus (the multi-zone-to-bus tiebreaker — see §15.8).
-   - Otherwise `PropagationManager.FindFirstZoneFeedingBus(bus.ReverbBus)` — first registered zone in the scene that points at this bus.
-   - Otherwise the bus's SO-authored defaults via `bus.GetDefaultProfile(scratch)`.
-2. **Copy the six listener-relevant parameters** into a non-allocating scratch profile.
+1. **Skip convolution buses** — their character is the impulse response, not parametric params (the six `Reverb_<Bus>_*` params aren't exposed on them).
+2. **Read the bus's own character** from its `ReverbSendBus` asset via `bus.GetDefaultProfile(scratch)` into a non-allocating scratch profile. No zone lookup happens — the asset is the source of truth.
 3. **Write six `AudioMixer.SetFloat`s** to the bus's exposed parameters (`Reverb_<Bus>_Wet`, `_Decay`, `_Room`, `_RoomHF`, `_DecayHFRatio`, `_Reflections`).
 
-The bus's character thus stays steady when the listener moves *out* of a zone that fed it — it falls back to its own first-registered-zone or its SO defaults, not to silence. Earlier iterations of the driver wrote the listener's resolved profile across every bus and produced a "30 dB jolt" when leaving a zone (the bus's still-decaying tail would suddenly inherit the next room's character). The current design keeps each bus stable; only the source-side audibility changes when the listener moves.
+Each bus has one stable acoustic identity that never depends on listener position — only the source-side audibility (loudness) changes when the listener moves. Re-driving every tick (rather than once) is belt-and-suspenders against exposed-param fallback ambiguity; it's six `SetFloat`s per parametric bus, negligible for a handful of buses.
+
+> **Changed 2026-05-21.** This driver used to resolve a "canonical zone" per bus (listener's zone, else first-registered via `FindFirstZoneFeedingBus`, else SO defaults) and write *that zone's* `ReverbProfile`. The source-of-truth unification replaced all of that with the unconditional `bus.GetDefaultProfile` read above. `FindFirstZoneFeedingBus` is no longer used by this path.
 
 #### 15.11 Container Opt-Ins, Revisited
 
@@ -7196,7 +7203,7 @@ The `Reverb Send Level Db` slider on the container is the right place to dial in
 #### 15.12 Performance
 
 - **Reverb-sends driver cost**: O(voiceCount × busCount) per tick. Default 20 Hz × 32 real voices × (say) 5 buses = 3200 `SetFloat`s/sec. Negligible.
-- **Bus-params driver cost**: O(busCount × zoneCount) per tick worst case (the `FindFirstZoneFeedingBus` fallback when listener is outside any bus-feeding zone). Typical scene of 5 buses × 20 zones × 20 Hz = 2000 zone scans/sec. Well under a microsecond.
+- **Bus-params driver cost**: O(busCount) per tick — six `SetFloat`s per parametric bus, convolution buses skipped, no zone scan (the old `FindFirstZoneFeedingBus` walk was removed in the source-of-truth unification). 5 buses × 20 Hz ≈ 600 `SetFloat`s/sec. Negligible.
 - **Static-emitter cache**: `voice.CachedSourceZone` avoids the O(zoneCount) `GetZoneContainingPoint` walk every tick for voices marked `StaticEmitter`. Footsteps parented to the player don't get this — moving emitters re-resolve every tick.
 - **`reverbSendsUpdateInterval`** (default 0.05 s = 20 Hz) trades responsiveness for CPU. Drop to 0.02 s (50 Hz) only if you have fast projectiles crossing zone boundaries and have measured the CPU is fine.
 
@@ -7204,10 +7211,46 @@ The `Reverb Send Level Db` slider on the container is the right place to dial in
 
 1. **One reverb effect per bus.** The schema assumes a single SFX Reverb on each generated mixer group. Stacking multiple reverbs on a bus is possible but not surfaced through the SO; you'd lose the Apply/Pull round-trip with the SO and the auto-exposed parameter set.
 2. **Six driven parameters, eight static.** If you need `Diffusion` or `Density` to vary per-room, you'd extend `AudioReverbProfile` and add new `Suffix*` constants to `ReverbSendBus`. The architecture supports it; v1 just doesn't ship it.
-3. **Single canonical zone per bus.** Multi-zone-to-bus aggregation picks one zone's profile, not a blend. Cathedral and Cathedral_Crypt produce one set of bus parameters at a time — the variant the listener is in wins, or first-registered wins when listener is elsewhere. Mixing-by-distance isn't on the roadmap.
-4. **No native convolution in v1.** `ReverbSendBus` has reserved schema for convolution (`UseConvolution`, `ImpulseResponse`, `ConvolutionWetTrimDb`) but the parametric SFX Reverb is the only effect Generate authors. Convolution is a future enhancement and the fields are `[HideInInspector]`-marked in the current release.
+3. **One character per bus.** A bus has a single acoustic identity (its `ReverbSendBus` asset). Several zones can route to one bus, but they all get that one character — there is no per-zone variation on a shared bus, and no mixing-by-distance between zones. If two rooms must sound different, author two bus assets.
+4. **Convolution is Windows-only and in beta.** The native convolution path (§15.14) ships for Windows x64 only — macOS and consoles are Phase 4. It's feature-complete and build-validated for that scope, but carries known caveats: no runtime IR swap (the IR is fixed at author/scene-load time), ambient emitters can't render convolution (they fall back to inert parametric defaults — §15.14), and the convolver rebuilds on the audio thread (fine at load time, not yet ready for in-game IR changes).
 
-#### 15.14 Troubleshooting
+#### 15.14 Convolution Reverb (Windows, beta)
+
+Convolution is the **alternative engine** for a reverb bus. Instead of Unity's parametric SFX Reverb (which approximates a room from a handful of knobs), a convolution bus convolves the dry send with a real **impulse response** (IR) — a recording of how an actual space (or an external hardware/plugin reverb) responds to an impulse. This captures the true character of cathedrals, stairwells, parking garages, or a favorite Lexicon patch in a way the parametric reverb can't.
+
+It's an **opt-in, per-bus** choice: parametric stays the cheap default for ordinary zones; convolution is the path for hero spaces.
+
+> **Status: beta, Windows x64 only.** Feature-complete and validated in a standalone Windows build, but see the caveats at the end of this section before relying on it. macOS and consoles are Phase 4.
+
+**When to use which:**
+
+| Use parametric (SFX Reverb)                       | Use convolution                                            |
+|---------------------------------------------------|------------------------------------------------------------|
+| Generic / cheap zones, lots of them               | Hero spaces where the room's identity matters              |
+| You want to tune by ear with knobs                | You have (or can capture) a real IR of the space           |
+| Cross-platform today                              | Windows only for now                                       |
+| Live parameter changes are fine                   | IR is fixed at author/scene-load time (no in-game swap)    |
+
+**Authoring a convolution bus:**
+
+1. On the `ReverbSendBus` asset, tick **Use Convolution**. The parametric fields are ignored from here on.
+2. Assign an **Impulse Response** clip. Set its import **Load Type** to *Decompress On Load* or *PCM* so the CPU can read its samples — without this the runtime upload fails (`GetData failed`). Mono or stereo (downmixed to mono in v1); ~4 s at 48 kHz is a typical ceiling for SFX.
+3. Set **Convolution Wet Trim** (dB) to taste — this is the live, cheap level control for the wet path.
+4. Click **Generate Mixer Group** on the asset. This drops the native *SFX Convolution Reverb* plugin on the bus group (instead of SFX Reverb), assigns the bus a free IR slot, and authors the plugin's IR Slot / Wet Trim / IR Gain params.
+5. **Wire the send path** the same way as a parametric bus: run the Occlusion Layout Builder's **Auto-Create** so each slot gets a Send and the bus group gets a Receive. *Without this the bus is silent with no error* — see §15.6 / the workflow note. (This step is identical for parametric and convolution buses; convolution didn't change the send/receive plumbing.)
+
+**Runtime behavior:** the IR samples are uploaded into the plugin's slot table at `AudioManager` startup (`UploadConvolutionIRs()` in `Awake`). The slot table is volatile, so the IRs re-upload cleanly on every play / scene reload. The authored slot index + Wet Trim / IR Gain params live in the mixer asset; the IR *samples* come from this runtime upload. Nothing depends on driving exposed params from script at runtime.
+
+**Requirements:** the native plugin `SFXConvolutionReverb.dll` must be present under `RunTime/Plugins/Windows/x86_64/` with its Plugin Importer set to **Load on startup = true** (without it the effect silently never registers in the mixer — see `CRITICAL_UnityAudio.md` §14). It ships in the repo; you only rebuild it if you change the C++ source under `NativeAudio/SFXConvolutionReverb/`.
+
+**Caveats (beta):**
+
+- **No runtime IR swap.** The IR is fixed once uploaded. Changing IRs during gameplay (zone-driven IR selection, crossfade) is Phase 4 and requires moving the convolver rebuild off the audio thread first.
+- **Ambients can't render convolution.** `AmbientEmitter` uses a per-source *parametric* `AudioReverbFilter`, not the convolution plugin. An ambient whose listener-zone routes to a convolution bus gets that asset's (inert) parametric defaults — **not** the impulse response. Treat ambients as parametric-only for now, or route them through the bus's send/receive.
+- **Convolver rebuild is on the audio thread.** Fine because IRs only (re)assign at author / scene-load time, where the one-time hitch is inaudible. It would glitch if IRs swapped mid-gameplay — hence the no-runtime-swap caveat above.
+- **Malformed/empty IR clips aren't fully guarded yet.** Trust your IR clips; a bad clip's behavior is undefined pending an input-validation pass.
+
+#### 15.15 Troubleshooting
 
 **"Voices play but no reverb tail."**
 - Confirm `Allow Reverb Send = ✓` on the container.
@@ -7219,11 +7262,12 @@ The `Reverb Send Level Db` slider on the container is the right place to dial in
 **"A bus has no character — no decay, no reflections."**
 - Did you run Generate on its `ReverbSendBus` asset? Until you do, the mixer group has no effect on it.
 - Click Validate Wiring on the asset. It'll list every missing piece.
-- Check the bus's `Room` value: at `-10000 dB` the reverb is intentionally silent (the default for unconfigured zones). Drag toward 0 to enable.
+- Parametric bus: check the asset's `Room` value — at `-10000 dB` (the default) the reverb is intentionally silent. Drag toward 0 to enable.
+- Convolution bus: check it has an `Impulse Response` assigned and that the clip is CPU-readable (Load Type = Decompress On Load / PCM). See §15.14.
 
 **"The bus sounds like the wrong room."**
-- The listener-side driver picks the canonical zone for each bus. With listener outside any bus-feeding zone, the bus inherits the *first registered* such zone's profile — order in the registry matters in the fallback case. If you have Cathedral and Cathedral_Crypt both feeding Reverb_Cathedral and Cathedral_Crypt happens to be first in the registry, an outside-cathedral listener will hear the crypt variant.
-- Fix by reordering the registry, or by making the two zones share a profile if the variation isn't load-bearing.
+- Character comes from the bus's own `ReverbSendBus` asset, not from any zone, so "wrong room" means the wrong *asset* is wired. Confirm the zone's `ReverbBus` points at the bus group you think it does, and that you tuned (or assigned the IR to) that same asset.
+- Remember several zones routing to one bus all share that bus's single character — that's by design, not a bug.
 
 **"After re-generating, my mixer-window manual tweaks were wiped."**
 - Generate runs `WriteParametricDefaults`, which pushes the SO's values into the mixer effect's target snapshot. If you've been tuning in the mixer window directly, run **Pull Params ← Mixer** *before* the next Generate to bring the SO into sync. After that, Generate is non-destructive — it writes back what's already there.

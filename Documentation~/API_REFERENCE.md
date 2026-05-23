@@ -1836,7 +1836,6 @@ public void NotifyPortalParamsChanged(AudioPortal p);
 ```csharp
 public AudioZone GetCurrentListenerZone();
 public AudioZone GetZoneContainingPoint(Vector3 worldPoint);
-public AudioZone FindFirstZoneFeedingBus(AudioMixerGroup busGroup);
 public float GetSourceAudibility(AudioZone sourceZone);
 public float GetSourcePropagationCutoff(AudioZone sourceZone);
 public AudioZone GetResolvedListenerReverbProfile(Vector3 listenerPos, AudioReverbProfile dest);
@@ -1846,9 +1845,8 @@ public bool SilenceOutsideGraph { get; }
 
 - `GetCurrentListenerZone` — top of the listener zone stack, or null if the listener isn't inside any registered zone.
 - `GetZoneContainingPoint` — first registered zone whose `ContainsPoint(worldPoint)` returns true, or null. Used by the reverb-send driver to resolve source zones.
-- `FindFirstZoneFeedingBus` — first registered zone whose `ReverbBus` matches the given mixer group, or null. Used by the listener-side bus-params driver as the fallback canonical zone when the listener is outside any bus-feeding zone.
 - `GetSourceAudibility` / `GetSourcePropagationCutoff` — per-zone reads from the listener-audibility cache, populated each solve tick. Same-zone = 1.0 / 22 kHz; through-portals = chain-of-portals weight; unreachable = 0 / 500 Hz.
-- `GetResolvedListenerReverbProfile` — fills the provided `AudioReverbProfile` with the listener's current zone profile (portal-blend lerped when inside a blend region). Returns the canonical zone whose profile was written.
+- `GetResolvedListenerReverbProfile` — fills the provided `AudioReverbProfile` with the listener's current zone's reverb *character*, resolved zone → `ReverbBus` → `ReverbSendBus` SO (portal-blend lerped when inside a blend region). Returns the canonical zone that was resolved. Still used by the per-source ambient path (`AmbientEmitter`); the per-bus parametric driver no longer calls it.
 
 ---
 
@@ -1868,8 +1866,7 @@ A volume of world space tagged as one acoustic room. Nodes of the propagation gr
 | `baseVolumeDb`     | 0       | Optional per-zone attenuation baseline added to ambient source volume.          |
 | `activationRadius` | 50      | Distance from listener beyond which this zone is culled. `Infinity` = never cull. The culler preserves transitive reachability — a zone connected to the listener's zone through near portals is force-included even when individually out of range. |
 | `entryFadeMeters` (Min 0) | 0 | Soft membership band measured inward from the trigger surface. 0 = hard boundary (binary in/out). When > 0, a point at the surface has membership 0 and a point this many meters inside has membership 1; lerps linearly in between. Used to fade reverb sends, listener-side reverb character, and `BaseVolumeDb` smoothly across the boundary. |
-| `reverbProfile`    | silent  | `AudioReverbProfile` driving the listener-side bus character when the listener is in this zone. Defaults to silent (`Room = -10000`). See [Reverb Send Buses](#reverb-send-buses). |
-| `reverbBus`        | null    | The mixer reverb bus voices physically in this zone send to (source-side). Drag in the `ReverbBus` field from a `ReverbSendBus` asset. Null = no reverb-send routing for sources in this zone. |
+| `reverbBus`        | null    | The mixer reverb bus voices physically in this zone send to (source-side). Drag in the `ReverbBus` field from a `ReverbSendBus` asset. Null = no reverb-send routing for sources in this zone. The bus's *character* lives on its `ReverbSendBus` asset, not here. See [Reverb Send Buses](#reverb-send-buses). |
 
 #### Properties
 
@@ -1878,8 +1875,7 @@ public string ZoneId { get; }
 public float BaseVolumeDb { get; }
 public float ActivationRadius { get; }
 public float EntryFadeMeters { get; }
-public AudioReverbProfile ReverbProfile { get; }   // never null at runtime; defaults to AudioReverbProfile.Off
-public AudioMixerGroup ReverbBus { get; }          // null when no bus assigned
+public AudioMixerGroup ReverbBus { get; }          // null when no bus assigned; routing only (character lives on the ReverbSendBus SO)
 public IReadOnlyList<BoxCollider> VolumeColliders { get; }
 ```
 
@@ -2286,7 +2282,7 @@ foreach (var bus in interestingBuses)
 
 ## Reverb Send Buses
 
-The "wet path" complement to occlusion. Source-side: voices in a tagged zone send to a per-zone reverb bus. Listener-side: each bus's parameters are driven from the listener's current zone profile. See [Manual chapter 15](USER_GUIDE.md#15-reverb-send-buses--per-zone-reverb) for architecture and design rationale.
+The "wet path" complement to occlusion. Source-side: voices in a tagged zone send to a per-zone reverb bus. Listener-side: each bus's character is defined by its own `ReverbSendBus` asset (the single source of truth) and driven onto the mixer each tick — parametric buses via six exposed SFX Reverb params, convolution buses via a native impulse-response plugin (§15.14). See [Manual chapter 15](USER_GUIDE.md#15-reverb-send-buses--per-zone-reverb) for architecture and design rationale.
 
 ---
 
@@ -2334,6 +2330,19 @@ public float Density { get; }           // 0..100 %
 
 Only the six listener-relevant parameters (`ReverbLevel`, `DecayTime`, `Room`, `RoomHF`, `DecayHFRatio`, `ReflectionsLevel`) are exposed to the runtime driver. The other eight describe bus identity and stay at the SO-authored snapshot defaults.
 
+#### Properties — Convolution (Phase 3.2, Windows)
+
+When `UseConvolution` is true the bus uses the native convolution plugin instead of SFX Reverb, and the parametric defaults above are ignored. See [Manual §15.14](USER_GUIDE.md#1514-convolution-reverb-windows-beta) for the authoring walkthrough and beta caveats.
+
+```csharp
+public bool UseConvolution { get; }          // false = parametric SFX Reverb; true = convolution plugin
+public AudioClip ImpulseResponse { get; }    // the IR to convolve; must be CPU-readable (Decompress On Load / PCM)
+public float ConvolutionWetTrimDb { get; }   // -80..+20 dB wet trim, 0 = unity
+public int ConvolutionSlot { get; }          // index in the plugin's IR slot table; -1 = unassigned (hidden; Generate assigns it)
+```
+
+`ConvolutionSlot` is `[HideInInspector]` — `ReverbAutoCreator` assigns a stable free slot at Generate, and both the authored "IR Slot" effect param and the runtime IR upload (`AudioManager.UploadConvolutionIRs`) read it. Designers never set it.
+
 #### Identity Helpers
 
 ```csharp
@@ -2353,7 +2362,7 @@ public static string SanitizeBusName(string raw);
 
 `ParamName("Wet")` for a bus named "Bathroom" returns `"Reverb_Bathroom_Wet"` — that's the exposed mixer parameter the runtime driver writes to.
 
-`GetDefaultProfile` is the fallback path used by `AudioManager.DriveReverbBusParams` when no scene zone feeds this bus — the bus reverts to its SO-authored character.
+`GetDefaultProfile` is the **primary** (and only) source for `AudioManager.DriveReverbBusParams`: every parametric bus is driven from its own SO character each tick, unconditionally — no zone lookup. (Before the 2026-05-21 source-of-truth unification this was only a fallback "when no zone feeds the bus"; the zone-driven path was removed.) Convolution buses skip the driver entirely.
 
 #### Editor Surface
 
@@ -2362,6 +2371,7 @@ public static string SanitizeBusName(string raw);
 public void EditorSetReverbBus(AudioMixerGroup group);
 public void EditorSetOutputDestination(AudioMixerGroup group);
 public void EditorSetMixerGroupGuid(string guid);
+public void EditorSetConvolutionSlot(int slot);   // ReverbAutoCreator assigns the IR slot at Generate
 #endif
 ```
 
@@ -2407,7 +2417,7 @@ Called by the Reverb Send Buses window's Refresh button after re-scanning the pr
 **Namespace:** `AudioSystem.Propagation`
 **Inheritance:** `[Serializable] public class`
 
-Per-zone reverb parameters, interpolatable across portal blend regions and copy-able into a non-allocating scratch buffer. Six fields, each matching one of the listener-relevant SFX Reverb parameters.
+Reverb character parameters — six fields, each matching one of the listener-relevant SFX Reverb parameters. Authored on a `ReverbSendBus` SO (the source of truth) and copied into a non-allocating scratch buffer by the bus-params driver; also interpolatable across portal blend regions by the per-source ambient path.
 
 #### Fields
 
@@ -2437,17 +2447,17 @@ public static readonly AudioReverbProfile Off;  // shared singleton, Room = -100
 
 ### AudioZone reverb fields
 
-`AudioZone` (see [Propagation section](#audiozone)) has two reverb-relevant fields:
+`AudioZone` (see [Propagation section](#audiozone)) has one reverb-relevant field — **routing only**:
 
 ```csharp
-public AudioMixerGroup ReverbBus { get; }       // routing target (source-side)
-public AudioReverbProfile ReverbProfile { get; } // character (listener-side)
+public AudioMixerGroup ReverbBus { get; }       // routing target (source-side); null when unassigned
 ```
 
 - **`ReverbBus`** — the mixer group voices physically in this zone send to. Drag in a `ReverbSendBus`'s `ReverbBus` field. Leave null for zones with no dedicated reverb (the source-side send is skipped for sources in that zone). Returns null at runtime when explicitly left empty.
-- **`ReverbProfile`** — drives the bus's six runtime parameters when the listener is in this zone. Never null at runtime (defaults to `AudioReverbProfile.Off` when unassigned).
 
-Multi-zone-to-bus aggregation is supported — several zones can share a `ReverbBus`. The listener-side driver picks the canonical zone (listener's own if it feeds the bus, else first registered via `PropagationManager.FindFirstZoneFeedingBus`).
+> **Removed 2026-05-21.** `AudioZone.ReverbProfile` (the per-zone character field) was deleted in the source-of-truth unification. A bus's character now lives entirely on its `ReverbSendBus` SO; the zone only routes. The `entryFadeMeters` field (general propagation, see the AudioZone inspector table) still governs how the send fades across the zone boundary.
+
+Multi-zone-to-bus aggregation is supported — several zones can share a `ReverbBus`. Because character is per-bus now, all zones feeding a given bus produce that bus's single SO character (no per-zone variation on a shared bus).
 
 ---
 
@@ -2692,10 +2702,11 @@ mh.UpdatePositions(newTransforms);
   - Multi-ray partial occlusion (`occlusionRayCount`, `occlusionRaySpreadMeters`) — N-level edge gradient instead of binary
   - Per-frame exponential smoothing via `occlusionGainSmoothingSeconds` / `occlusionCutoffSmoothingSeconds`
   - Occlusion Layout Builder window (`Window > Audio System > Occlusion Layout`)
-- **New subsystem: Reverb Send Buses & Per-Zone Reverb** — source-side routing + listener-side bus-character driver. SFX voices contribute to the reverb of the room they're fired in; each bus's character is driven from the listener's current zone profile. See [Manual chapter 15](USER_GUIDE.md#15-reverb-send-buses--per-zone-reverb).
+- **New subsystem: Reverb Send Buses & Per-Zone Reverb** — source-side routing + listener-side bus-character driver. SFX voices contribute to the reverb of the room they're fired in; each bus's character is defined by its `ReverbSendBus` asset (the single source of truth, since the 2026-05-21 unification). See [Manual chapter 15](USER_GUIDE.md#15-reverb-send-buses--per-zone-reverb).
   - `ReverbSendBus` (one acoustic-space identity per asset) + `ReverbSendBusRegistry`
-  - `AudioReverbProfile` (six listener-relevant SFX Reverb params)
-  - `AudioZone.ReverbBus` (routing target) + `AudioZone.ReverbProfile` (character)
+  - `AudioReverbProfile` (six SFX Reverb character params, authored on the bus SO)
+  - `AudioZone.ReverbBus` (routing target; character lives on the `ReverbSendBus` SO, not the zone)
+  - **Convolution reverb option (Phase 3.2, Windows x64, beta)** — `ReverbSendBus.UseConvolution` swaps the parametric SFX Reverb for a native impulse-response convolution plugin. See [Manual §15.14](USER_GUIDE.md#1514-convolution-reverb-windows-beta).
   - `AudioManager.WriteReverbSendsImmediate` — synchronous on-Play write so first audio frame carries correct routing
   - `AudioContainer` opt-in flags: `AllowReverbSend`, `ReverbSendLevelDb`, `StaticEmitter`, `ExplicitReverbBus`
   - Reverb Send Buses window (`Window > Audio System > Reverb Send Buses`) + per-asset Generate/Validate/Apply/Pull inspector
