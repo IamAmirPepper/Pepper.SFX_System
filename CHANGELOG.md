@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.5.2.2] - 2026-06-05
+## [2.5.3] - 2026-06-05
 
 ### Fixed
 - **Player builds no longer fail with ILLink error IL1010** ("Assembly 'Assembly-CSharp'
