@@ -1,5 +1,61 @@
 # Changelog
 
+## [3.0.0] - 2026-07
+
+The free/full split release. This package is now the **free version** — the complete
+single-player audio middleware. A **full version** (multiplayer audio, Addressables-based
+zone streaming, pro mixer/profiler tooling, full source code, and a one-click upgrade
+migration tool) is coming to the Unity Asset Store. Everything you author in the free
+version carries over.
+
+### Added
+- **Audio Explorer** (`Window ▸ Audio System ▸ Audio Explorer`) — browse every event,
+  container and bus in one window, with inline inspector and play-to-preview.
+- **Import Manager** (`Window ▸ Audio System ▸ Import Manager`) — category-driven import
+  pipeline; correct Load Type / compression applied automatically per category
+  (SFX / Music / UI / Dialogue / Ambience), with project-window icon overlays.
+- **Voice Pool Debug** (`Window ▸ Audio System ▸ Voice Pool Debug`) — live table of every
+  playing voice (clip, event, bus, volume, distance) with per-voice stop, pool health
+  bars, and a "voices lost to destruction" diagnostic.
+- **Audio Event IDs** (`Window ▸ Audio System ▸ Audio Event IDs`) — gives every event a
+  permanent, rename-proof stable ID and flags collisions; IDs are captured automatically
+  on import from here on.
+- **Container Validator** (`Window ▸ Audio System ▸ Container Validator`) — scans all
+  containers for common authoring mistakes with one-click fixes.
+- **Clip warming** — `AudioManager.WarmClip / WarmClips / WarmContainer` pre-load a clip's
+  audio data ahead of first play (kills the first-play hitch on streamed music and
+  compressed dialogue). `AmbientSource` warms its loop clip automatically on register.
+- **Voice pool health surface** — `AudioManager.GetStatistics()` now reports live voice
+  objects vs budget and a running voices-lost-to-destruction count; the AudioManager
+  inspector shows a live health card during Play, with an opt-out warning
+  (`warnOnActiveVoiceDestroyed`) naming the emitter-destroyed-mid-sound cause.
+
+### Changed
+- **AudioEvent inspector is registry-aware.** With an `AudioEventRegistry` in the project
+  it validates registry membership (with an *Add to Registry* button) instead of pushing
+  assets into `Resources/`. Legacy Resources-folder guidance now applies only to projects
+  without a registry.
+- **Cooldown rejections no longer log a warning** — being rate-limited is the feature
+  working; at footstep rates the old warning flooded the console. The call still returns
+  an empty handle.
+- Voice stealing (`maxInstances` overflow) is now allocation-free — noticeably cheaper
+  under rapid-fire instance-capped events.
+- Runtime state (cooldown clocks, random anti-repeat history, sequence positions) resets
+  cleanly per play session when Enter Play Mode Options skip domain reload.
+- Reverb diagnostics moved under `Tools ▸ Audio System ▸ Diagnostics ▸ …`.
+
+### Fixed
+- A voice whose emitter GameObject was destroyed mid-play no longer silently shrinks the
+  pool unnoticed — it is swept, counted, and (optionally) warned about.
+- Handle volume semantics documented: `AudioHandle.SetVolume` sets an **absolute** level
+  (replaces the authored base volume) — see the API reference.
+
+### Notes
+- No public API was removed or changed — existing `PostEvent` code compiles and behaves
+  as before.
+- After updating: refresh Package Manager (or delete `Library/PackageCache/com.pepper.sfx@*`)
+  to pull the new commit.
+
 ## [2.5.3] - 2026-06-05
 
 ### Fixed

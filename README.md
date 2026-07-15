@@ -69,6 +69,7 @@ void PlayFootstep()
 - **Click-free voice pool** — pooled, priority-driven voices with stealing, distance LOD, and virtualization. Voices start on DSP-buffer boundaries and never rebuild filters mid-play, so reuse is structurally click-free.
 - **States & RTPCs** — group-based state machines that drive bus volumes, switches, and effect parameters in one transition; real-time parameters with smooth transitions.
 - **Multi-position audio** — one sound playing from N places at once (a river, a long wall of rain), sample-accurately synced.
+- **Clip warming** — pre-load a clip's audio data ahead of first play (`WarmClip` / `WarmContainer`), so streamed music and compressed dialogue never hitch on their first note.
 
 ### 🌍 Spatial audio
 - **Ambient propagation** — a zone/portal graph routes long-running ambient beds (rain, wind, machinery) through real geometry. Rain heard *from the window* when you're in another room; doors that animate smoothly between muffled and clear.
@@ -88,6 +89,7 @@ Everything lives under `Window ▸ Audio System`. In the order you'll likely mee
 | **Import Manager** | Drop audio files in, pick a category (SFX / Music / UI / Dialogue…), and the correct Unity import settings are applied automatically. No more per-file compression fiddling — and no accidentally streaming your footsteps. |
 | **Audio Explorer** | Every event, container and bus in one browsable window — click to inspect, press play to preview. No more hunting through project folders to find "that one footstep event". |
 | **Voice Pool Debug** | A live table of everything currently playing — which clip, which event, which bus, how loud, how far — with a one-click stop per voice. Your first stop whenever something *sounds* wrong. |
+| **Container Validator** | Scans every container for common authoring mistakes (missing clips, bad weights, broken references) and offers one-click fixes. Run it before a build, sleep better. |
 | **Occlusion Layout** | One-click setup for occlusion: scans your project and auto-builds the mixer plumbing that wall-muffling needs. Run it once, forget it exists. |
 | **Reverb Send Buses** | Create and manage per-room reverb from a single overview — generate, validate and apply each room's reverb bus without hand-editing the mixer. |
 | **Audio Event IDs** | A health-check for your events: gives each one a permanent, rename-proof ID and flags any duplicates. Keeps your project future-proof (these IDs are also what the full version's multiplayer uses on the wire). |
@@ -130,7 +132,7 @@ To pin to a specific version, append `#v3.0.0` (or any tag/branch) to the URL.
 |---|---|---|
 | Events, containers, buses, states, RTPCs | ✅ | ✅ |
 | Voice pool, occlusion, per-zone reverb, propagation | ✅ | ✅ |
-| Authoring & debug windows (table above) | ✅ | ✅ + pro mixer/profiler tooling |
+| Authoring & debug windows (table above) | ✅ | ✅ + **Mixer**, **Audio Profiler**, **EQ Spectrum Visualizer**, **Loading Validator** |
 | **Multiplayer audio** (NGO / FishNet) | — | ✅ |
 | **Zone-streamed audio memory** (Addressables) | — | ✅ |
 | Source code | Compiled DLLs | ✅ Full source |
@@ -142,7 +144,8 @@ Nothing you build in the free version is throwaway: the full version ships an up
 
 ## What's new in 3.0.0
 
-- 🛠️ **The editor suite grew** — Audio Explorer, Import Manager, Voice Pool Debug, and Audio Event IDs join the wizard and the spatial-authoring windows (see the table above).
+- 🛠️ **The editor suite grew** — Audio Explorer, Import Manager, Voice Pool Debug, Audio Event IDs, and Container Validator join the wizard and the spatial-authoring windows (see the table above).
+- 🔥 **Clip warming** — `WarmClip` / `WarmClips` / `WarmContainer` pre-load audio data on your schedule, killing first-play hitches for streamed music and compressed dialogue. Ambient sources warm themselves automatically.
 - 🔧 **Core runtime hardening** — live voice-pool health diagnostics (including a warning when an emitter is destroyed mid-sound), cleaner session resets, quieter logs, and faster voice stealing under load.
 - 📚 **Docs refreshed** throughout.
 
