@@ -1,8 +1,8 @@
 # SFX System — User Guide
 
-**Version:** 2.5.0
+**Version:** 3.0.0
 **Unity Compatibility:** 6000.0.48f1 and above
-**Last Updated:** May 2026
+**Last Updated:** July 2026
 
 ---
 
@@ -2690,12 +2690,12 @@ When the listener is outside every registered AudioZone, propagation has no opin
 
 ### Per-Zone Reverb
 
-The "wet path" sibling of the occlusion section. SFX voices send a copy of their dry signal to a per-zone reverb bus; each bus's character is defined by its `ReverbSendBus` asset, which is the single source of truth (the zone only decides *which* bus a voice sends to). See Manual chapter 15 for the architecture.
+The "wet path" sibling of the occlusion section. SFX voices send a copy of their dry signal to a per-zone reverb bus; the bus's character is driven from the listener's zone profile. See Manual chapter 15 for the architecture.
 
 > 🧱 **Prerequisite: the Occlusion Slot Pool must already be authored.** Reverb sends are written into the voice's occlusion slot — no slot, no sends. If you haven't done it yet, jump to [Occluding SFX Through Geometry → One-Time Project Setup](#recipe-one-time-project-setup-5-minutes) first. Come back here once the layout exists.
 
 > ⚠️ **Silent failures to know up front**
-> - A bus's character lives on its `ReverbSendBus` asset, **not** the zone. A bus whose SO `Room` is at `-10000 dB` (the default) is silent until you raise it (try `0` dB). Tagging a zone and pointing its `Reverb Bus` at that asset routes voices there, but the *sound* comes from the asset.
+> - `ReverbProfile.Room = -10000 dB` is the **default** and means *no reverb*. A freshly-tagged zone is silent until you raise it (try `0` dB).
 > - The `Reverb Bus` field on `AudioZone` wants the **mixer group reference** inside the SendBus asset — not the SendBus asset itself. Drag from the SendBus's `ReverbBus` field, not from the Project window.
 > - `AudioManager.Reverb Send Bus Registry` must be assigned. Without it, the registry is empty and nothing routes.
 > - After adding a new bus, **re-run the Occlusion Layout Builder** so existing slots get the new bus's Send parameter authored. Skipping this means existing containers can't send to the new bus.
@@ -2874,13 +2874,13 @@ Use when the mixer window's UI is more convenient (it has the per-parameter slid
 **"My voice has `Allow Reverb Send = ✓` but I hear no wet tail."**
 - Confirm `AudioManager.ReverbSendBusRegistry` is assigned and contains at least one bus.
 - Confirm the source's zone has its `ReverbBus` field set to a bus that's in the registry.
-- Confirm the bus's `ReverbSendBus` asset isn't silent: a parametric bus with `Room` at -10000 dB (the default) produces no tail — raise it toward 0. A convolution bus with no `Impulse Response` assigned is likewise silent.
+- Confirm the zone's `ReverbProfile.Room` isn't at -10000 dB (the silent default — change to 0 or a moderate negative value).
 - Confirm the listener can reach the source's zone (unreachable zones produce audibility = 0).
 - Confirm the container's `Mixer Group` is a bus that appears in the Occlusion Layout's bus list — without a slot, there are no Send level params to write to.
 
-**"Several zones share one bus and they all sound identical."**
-- This is **by design** as of the source-of-truth unification: a bus has one acoustic identity, defined by its `ReverbSendBus` asset, regardless of which zone routed the voice to it. Per-zone variation on a *shared* bus is no longer supported.
-- If you need Cathedral and Cathedral_Crypt to sound different, give them **separate** `ReverbSendBus` assets and point each zone's `ReverbBus` at its own.
+**"I hear reverb everywhere but it always sounds like the same room."**
+- The listener-side driver fallback writes the *first registered zone's* profile when the listener is outside any bus-feeding zone. Look at the registry order — first-in-list wins for the fallback.
+- This is sometimes desirable (have a "default outdoor character" zone first in the list) and sometimes not. Reorder the registry assets if needed.
 
 **"I added a new ReverbSendBus but it doesn't appear in the dropdowns."**
 - Open Window ▸ Audio System ▸ Reverb Send Buses and click Refresh. The registry only updates when refreshed.
@@ -3198,6 +3198,8 @@ The Manual is the system's deep reference — architecture, design rationale, an
 13. [Ambient Propagation Subsystem](#13-ambient-propagation-subsystem) — zone/portal graph routing for long-running beds
 14. [Occlusion Mixer Slot Pool](#14-occlusion-mixer-slot-pool) — per-bus slot pools, multi-ray occlusion, propagation composition
 15. [Reverb Send Buses & Per-Zone Reverb](#15-reverb-send-buses--per-zone-reverb) — source-side routing and listener-side bus-character driver
+16. [Audio Loading & Memory](#16-audio-loading--memory) — import policy, clip warming, and the optional Addressables backend
+17. [Multiplayer (Netcode)](#17-multiplayer-netcode) — backend-agnostic networked audio (NGO / FishNet)
 
 Appendices: [Glossary](#appendix-a-glossary), [Quick Reference](#appendix-b-quick-reference).
 
@@ -3564,7 +3566,9 @@ public class GainStack
     public float BaseGain = 1f;       // Container/Event base volume
     public float BusGain = 1f;        // Bus hierarchy contribution
     public float OcclusionGain = 1f;  // Raycast-based attenuation
-    public float RtpcGain = 1f;       // RTPC-driven modulation
+    public float RtpcGain = 1f;       // RTPC-driven modulation. RESERVED: sole writer is
+                                      // BlendContainer.UpdateBlend (per-layer blend curve).
+                                      // No generic RTPC->volume driver writes it — see note below.
     public float SchedulerGain = 1f;  // Crossfade/transition gain
     public float MultiplierGain = 1f; // Per-voice multiplicative — volume randomization,
                                       // Switch/Blend container outer Volume, PlayWithVolume scale.
@@ -3586,7 +3590,7 @@ Each system can independently control volume without knowing about others:
 - Container sets BaseGain
 - Bus hierarchy sets BusGain
 - Occlusion system sets OcclusionGain
-- RTPC system sets RtpcGain
+- RtpcGain is **reserved for `BlendContainer.UpdateBlend`** (the per-layer blend curve, an RTPC-driven gain). It is the slot's only writer — there is no generic RTPC→volume driver, and a future one must not write this slot for blend voices (it would fight the blend frame-by-frame). See the reservation note on `GainStack.RtpcGain` in `AudioVoiceEnhanced.cs`.
 - Crossfade/scheduler sets SchedulerGain
 - Volume randomization, SwitchContainer/BlendContainer outer Volume, and `PlayWithVolume` write MultiplierGain
 - Ducking is applied at the bus (the voice-level `DuckingGain` field is deprecated and not part of the final gain calculation)
@@ -7019,27 +7023,31 @@ Neither is correct alone. Real acoustics combine both:
 - **Routing is source-driven**: a voice's contribution goes to the reverb of the room it's *physically in*.
 - **Character is room-driven**: each reverb bus represents one acoustic space, and its parameters don't change just because the listener walked to a different room.
 
-The Reverb Send Bus subsystem implements this split. **Source-side: which bus a voice sends to is determined by the voice's zone.** **Listener-side: each bus's character is its own — defined by the bus's `ReverbSendBus` asset, the single source of truth.** Walking from the bathroom to the cathedral doesn't change which bus the bathroom gunshot is sending to — and doesn't change what the bathroom bus sounds like. Only the listener's *audibility weight* to that bus changes (the muffled "I can still hear it through the wall" attenuation), and that's handled by the propagation subsystem feeding the source-side audibility cache.
+The Reverb Send Bus subsystem implements this split. **Source-side: which bus a voice sends to is determined by the voice's zone.** **Listener-side: each bus's parameters are driven from that bus's canonical zone profile.** Walking from the bathroom to the cathedral doesn't change which bus the bathroom gunshot is sending to — and doesn't change what the bathroom bus sounds like. Only the listener's *audibility weight* to that bus changes (the muffled "I can still hear it through the wall" attenuation), and that's handled by the propagation subsystem feeding the source-side audibility cache.
 
 #### 15.2 Mental Model
 
 ```
-   Two independent axes per voice:
+                                                                  ┌──────────────┐
+   AudioZone "Bathroom"        ────source-side────►   Reverb_Bathroom (a bus)   │
+     .ReverbBus = Reverb_Bathroom (this routing)                │                │
+     .ReverbProfile = {...}    ─────listener-side─►   bus character ↑           │
+                                                                │     dries to   │
+                                                                │     mixer      │
+                                                                └────────────────┘
 
-   ROUTING (source-side) — set on the AudioZone, decides which bus voices send to:
-     AudioZone "Bathroom"   .ReverbBus = Reverb_Bathroom   ──►  send to Reverb_Bathroom bus
-     AudioZone "Cathedral"  .ReverbBus = Reverb_Cathedral  ──►  send to Reverb_Cathedral bus
-     AudioZone "Hallway"    .ReverbBus = (none)            ──►  no reverb sends from this zone
+   AudioZone "Cathedral"       ────source-side────►   Reverb_Cathedral (a bus)
+     .ReverbBus = Reverb_Cathedral                              ↑
+     .ReverbProfile = {...}    ─────listener-side─►   bus character
 
-   CHARACTER (listener-side) — set on the ReverbSendBus asset, the single source of truth:
-     ReverbSendBus "Reverb_Bathroom"   ──►  parametric params  OR  impulse response
-     ReverbSendBus "Reverb_Cathedral"  ──►  parametric params  OR  impulse response
-     (a bus's sound never depends on listener position or on any zone)
+   AudioZone "Hallway"
+     .ReverbBus = (none)       ────────────────────►   (no reverb sends from this zone)
+     .ReverbProfile = silent
 ```
 
 - **Voices** in the Bathroom zone whose container has `Allow Reverb Send = ✓` send a copy of their dry signal to `Reverb_Bathroom` at the container's authored level, scaled by the listener's audibility weight (1.0 same-zone, <1 through portals, 0 unreachable).
-- **The `Reverb_Bathroom` bus** is one mixer group on the project's voice mixer. For a parametric bus it carries an SFX Reverb effect whose six listener-relevant parameters are exposed to the runtime via `AudioMixer.SetFloat`; for a convolution bus it carries the native convolution plugin (see §15.14).
-- **The bus's character** comes entirely from its `ReverbSendBus` asset. For a parametric bus, the runtime driver writes the asset's six parameters onto the mixer effect each tick. The character does not depend on the listener's position or on any zone's profile — the asset *is* the room's identity.
+- **The `Reverb_Bathroom` bus** is one mixer group on the project's voice mixer. It carries an SFX Reverb effect whose six listener-relevant parameters are exposed to the runtime via `AudioMixer.SetFloat`.
+- **The bus's parameters** are driven each tick from the canonical Bathroom zone's `ReverbProfile` — when the listener is *in* the bathroom that's the active zone, when the listener is elsewhere it's the first registered Bathroom zone or the bus's own authored defaults.
 
 #### 15.3 The Two Halves Working Together
 
@@ -7047,11 +7055,11 @@ The clean separation between routing and character produces these expected behav
 
 | Scenario                                                | Source-side (which bus) | Listener-side (bus character) | Audibility scaling |
 |---------------------------------------------------------|-------------------------|-------------------------------|---------------------|
-| Listener in bathroom, gunshot in bathroom               | Bathroom                | Bathroom bus character        | 1.0 (same zone)     |
-| Listener in hallway, gunshot in bathroom (door open)    | Bathroom                | Bathroom bus character        | ~0.3 (portal loss)  |
-| Listener in hallway, gunshot in bathroom (door closed)  | Bathroom                | Bathroom bus character        | ~0.05 (closed door) |
-| Listener in cathedral, gunshot in bathroom (no path)    | Bathroom                | Bathroom bus character        | 0 (unreachable)     |
-| Listener in cathedral, choir voice in cathedral         | Cathedral               | Cathedral bus character       | 1.0                 |
+| Listener in bathroom, gunshot in bathroom               | Bathroom                | Bathroom profile              | 1.0 (same zone)     |
+| Listener in hallway, gunshot in bathroom (door open)    | Bathroom                | Bathroom profile              | ~0.3 (portal loss)  |
+| Listener in hallway, gunshot in bathroom (door closed)  | Bathroom                | Bathroom profile              | ~0.05 (closed door) |
+| Listener in cathedral, gunshot in bathroom (no path)    | Bathroom                | Bathroom profile              | 0 (unreachable)     |
+| Listener in cathedral, choir voice in cathedral         | Cathedral               | Cathedral profile             | 1.0                 |
 
 The bathroom gunshot keeps sounding like a bathroom gunshot regardless of where the listener stands — only its loudness changes based on the listener's audibility to the bathroom. Two different voices in two different zones send to two different reverb buses, both running simultaneously, each carrying its own room's character.
 
@@ -7059,7 +7067,7 @@ The bathroom gunshot keeps sounding like a bathroom gunshot regardless of where 
 
 One ScriptableObject per acoustic space identity in the project. Create via Project ▸ Create ▸ Audio System ▸ Reverb Send Bus, name it after the room (e.g. `Reverb_Bathroom`).
 
-Three layers of fields:
+Two layers of fields:
 
 **Mixer wiring** (top of inspector):
 
@@ -7074,18 +7082,6 @@ Three layers of fields:
 
 - **Basic (4)**: `DryLevel`, `Room`, `DecayTime`, `ReverbLevel` — the parameters 80% of tuning happens on.
 - **Advanced (10)**, behind an EditorPrefs-backed foldout that's closed by default: `RoomHF`, `RoomLF`, `DecayHFRatio`, `ReflectionsLevel`, `ReflectionsDelay`, `ReverbDelay`, `HFReference`, `LFReference`, `Diffusion`, `Density`.
-
-These parametric defaults apply only when `Use Convolution` is **off**. When it's on, the bus ignores them and uses the impulse response instead.
-
-**Convolution** (the alternative to the parametric reverb — see §15.14 for the full walkthrough):
-
-| Field                   | Purpose                                                                                                  |
-|-------------------------|----------------------------------------------------------------------------------------------------------|
-| `Use Convolution`       | Off by default. When on, the bus uses a real impulse response (native convolution plugin) instead of the parametric SFX Reverb. The parametric fields above are ignored. |
-| `Impulse Response`      | The IR `AudioClip` to convolve with. Must be CPU-readable — set its import **Load Type** to *Decompress On Load* or *PCM*. Mono or stereo (downmixed to mono in v1). Required when `Use Convolution` is on, or the bus is silent. |
-| `Convolution Wet Trim`  | Wet output trim in dB (range -80…+20). 0 = unity. The live, cheap level control for the convolution wet path. |
-
-A fourth convolution field, the IR *slot index*, is auto-assigned by Generate and hidden from the inspector — designers never set it.
 
 The asset's **name is the bus id**. Sanitization strips characters that would produce invalid Unity exposed-parameter identifiers; a bus named `Cave (small)` becomes `Cavesmall` for parameter naming. Rename the asset and the bus identity follows.
 
@@ -7108,7 +7104,7 @@ Two complementary editor UIs:
 
 | Button                    | What it does                                                                                                            |
 |---------------------------|-------------------------------------------------------------------------------------------------------------------------|
-| **Generate Mixer Group**  | Creates or finds the bus's mixer group and backfills `ReverbBus` on the SO. For a **parametric** bus: drops an SFX Reverb effect, writes the SO's parametric defaults to the target snapshot, and exposes the six runtime-driven parameters under schema names. For a **convolution** bus (`Use Convolution = on`): drops the native SFX Convolution Reverb plugin instead, assigns a free IR slot, and authors its IR Slot / Wet Trim / IR Gain params. Switching the toggle and re-generating auto-cleans the previous effect. Idempotent. |
+| **Generate Mixer Group**  | Creates or finds the bus's mixer group, drops an SFX Reverb effect on it, writes the SO's parametric defaults to the target snapshot, exposes the six runtime-driven parameters under schema names, and backfills `ReverbBus` on the SO. Idempotent. |
 | **Validate Wiring**       | Read-only health check. Reports "Wiring OK" or a bullet list of issues (missing mixer, missing effect, missing exposed param, mismatched OutputDestination, ParentGroup mismatch). |
 | **Apply Params → Mixer**  | Pushes the SO's parametric values into the existing mixer effect without re-running the group/expose work. Use after tweaking parametric values on the SO that you want reflected on the mixer side. |
 | **Pull Params ← Mixer**   | Copies the mixer effect's current values back onto the SO. Use after tweaking the mixer-window sliders that you want reflected on the SO side. |
@@ -7139,25 +7135,25 @@ Unity's SFX Reverb effect has 14 parameters. Generate exposes six:
 
 These match the 1:1 field set on `AudioReverbProfile` — they're the six parameters that **describe a room's identity in a way that varies meaningfully between rooms**. Cathedral and bathroom differ on these six.
 
-The other eight (DryLevel, RoomLF, ReflectionsDelay, ReverbDelay, HFReference, LFReference, Diffusion, Density) are static shaping rather than runtime-driven character — they describe *how this reverb is shaped* and stay at the SO-authored snapshot values, not written each tick.
+The other eight (DryLevel, RoomLF, ReflectionsDelay, ReverbDelay, HFReference, LFReference, Diffusion, Density) are bus identity rather than zone identity — they describe *how this reverb is shaped*, not *which room it is*. They stay at the SO-authored values and aren't driven at runtime.
 
 The exposed-parameter names follow the schema `Reverb_<BusName>_<Suffix>`. The constants live on `ReverbSendBus` (`SuffixWet`, `SuffixDecay`, …) so authoring and runtime can't drift out of name agreement.
 
-This whole six-parameter mechanism applies to **parametric** buses only. A convolution bus exposes no SFX Reverb params (its character is the impulse response) and is skipped by the listener-side driver — see §15.14.
-
 #### 15.8 The AudioZone Side
 
-The zone's connection to the reverb subsystem is **routing only** — a single field:
+Each zone has two fields that connect it to the reverb subsystem:
 
 ```csharp
 public AudioMixerGroup ReverbBus;       // routing target (source-side)
+public AudioReverbProfile ReverbProfile; // character (listener-side)
 ```
 
 - **`ReverbBus`** is the mixer group voices physically in this zone send to (when their container has `Allow Reverb Send = ✓`). Drag in the `ReverbBus` field from a `ReverbSendBus` asset. Leave null for zones that don't have a dedicated reverb (the source-side send is then skipped for sources in that zone).
+- **`ReverbProfile`** describes the six listener-relevant reverb parameters for this zone. Defaults to a silent profile (`Room = -10000 dB`), so zones that don't author a profile produce zero behavior change vs. a setup without reverb. Tune `Room` toward 0 dB to enable.
 
-> **Source-of-truth note (changed 2026-05-21).** The zone no longer carries any reverb *character* — the old `AudioZone.ReverbProfile` field was removed. A bus's character lives entirely on its `ReverbSendBus` asset, which is now the single source of truth. To make a room "sound reverberant," tune the parameters (or assign an IR) on the bus asset, not on the zone. The zone only decides *which* bus voices route to (and, via `entryFadeMeters`, how that send fades across the zone boundary).
+A zone's `ReverbProfile.Room` set toward 0 dB is the "yes, this room sounds reverberant" enable switch — leaving it at the default -10000 keeps the zone silent on the listener side even if it has a `ReverbBus` assigned. A custom inspector on `AudioZone` will warn when a profile is at silence so designers don't dial in `DecayTime` and wonder why it doesn't ring.
 
-Multiple zones can feed the same bus (e.g. `Cathedral` and `Cathedral_Crypt` both pointing at `Reverb_Cathedral`) — useful for routing several rooms to one shared acoustic identity. Because character is now per-bus, **every zone feeding a given bus produces that bus's single character**; there is no per-zone variation on a shared bus. If you need two rooms to sound different, give them separate bus assets.
+Multiple zones can feed the same bus (e.g. `Cathedral` and `Cathedral_Crypt` both pointing at `Reverb_Cathedral`). The listener-side driver picks the canonical zone for that bus: the listener's own zone if it feeds the bus, otherwise `PropagationManager.FindFirstZoneFeedingBus` (linear scan over registered zones). Useful for naming variants of an acoustic space without doubling the bus count.
 
 #### 15.9 The Source-Side Runtime: `AudioManager.ReverbSends`
 
@@ -7179,13 +7175,14 @@ The per-tick `AudioMixer.SetFloat` on the slot's `SendLevelParams[bus.BusName]` 
 
 The "what does each bus sound like" half. Same coroutine, same cadence. Per tick, per registered bus:
 
-1. **Skip convolution buses** — their character is the impulse response, not parametric params (the six `Reverb_<Bus>_*` params aren't exposed on them).
-2. **Read the bus's own character** from its `ReverbSendBus` asset via `bus.GetDefaultProfile(scratch)` into a non-allocating scratch profile. No zone lookup happens — the asset is the source of truth.
+1. **Pick the canonical zone for this bus**:
+   - The listener's current zone if it feeds this bus (the multi-zone-to-bus tiebreaker — see §15.8).
+   - Otherwise `PropagationManager.FindFirstZoneFeedingBus(bus.ReverbBus)` — first registered zone in the scene that points at this bus.
+   - Otherwise the bus's SO-authored defaults via `bus.GetDefaultProfile(scratch)`.
+2. **Copy the six listener-relevant parameters** into a non-allocating scratch profile.
 3. **Write six `AudioMixer.SetFloat`s** to the bus's exposed parameters (`Reverb_<Bus>_Wet`, `_Decay`, `_Room`, `_RoomHF`, `_DecayHFRatio`, `_Reflections`).
 
-Each bus has one stable acoustic identity that never depends on listener position — only the source-side audibility (loudness) changes when the listener moves. Re-driving every tick (rather than once) is belt-and-suspenders against exposed-param fallback ambiguity; it's six `SetFloat`s per parametric bus, negligible for a handful of buses.
-
-> **Changed 2026-05-21.** This driver used to resolve a "canonical zone" per bus (listener's zone, else first-registered via `FindFirstZoneFeedingBus`, else SO defaults) and write *that zone's* `ReverbProfile`. The source-of-truth unification replaced all of that with the unconditional `bus.GetDefaultProfile` read above. `FindFirstZoneFeedingBus` is no longer used by this path.
+The bus's character thus stays steady when the listener moves *out* of a zone that fed it — it falls back to its own first-registered-zone or its SO defaults, not to silence. Earlier iterations of the driver wrote the listener's resolved profile across every bus and produced a "30 dB jolt" when leaving a zone (the bus's still-decaying tail would suddenly inherit the next room's character). The current design keeps each bus stable; only the source-side audibility changes when the listener moves.
 
 #### 15.11 Container Opt-Ins, Revisited
 
@@ -7203,7 +7200,7 @@ The `Reverb Send Level Db` slider on the container is the right place to dial in
 #### 15.12 Performance
 
 - **Reverb-sends driver cost**: O(voiceCount × busCount) per tick. Default 20 Hz × 32 real voices × (say) 5 buses = 3200 `SetFloat`s/sec. Negligible.
-- **Bus-params driver cost**: O(busCount) per tick — six `SetFloat`s per parametric bus, convolution buses skipped, no zone scan (the old `FindFirstZoneFeedingBus` walk was removed in the source-of-truth unification). 5 buses × 20 Hz ≈ 600 `SetFloat`s/sec. Negligible.
+- **Bus-params driver cost**: O(busCount × zoneCount) per tick worst case (the `FindFirstZoneFeedingBus` fallback when listener is outside any bus-feeding zone). Typical scene of 5 buses × 20 zones × 20 Hz = 2000 zone scans/sec. Well under a microsecond.
 - **Static-emitter cache**: `voice.CachedSourceZone` avoids the O(zoneCount) `GetZoneContainingPoint` walk every tick for voices marked `StaticEmitter`. Footsteps parented to the player don't get this — moving emitters re-resolve every tick.
 - **`reverbSendsUpdateInterval`** (default 0.05 s = 20 Hz) trades responsiveness for CPU. Drop to 0.02 s (50 Hz) only if you have fast projectiles crossing zone boundaries and have measured the CPU is fine.
 
@@ -7211,46 +7208,10 @@ The `Reverb Send Level Db` slider on the container is the right place to dial in
 
 1. **One reverb effect per bus.** The schema assumes a single SFX Reverb on each generated mixer group. Stacking multiple reverbs on a bus is possible but not surfaced through the SO; you'd lose the Apply/Pull round-trip with the SO and the auto-exposed parameter set.
 2. **Six driven parameters, eight static.** If you need `Diffusion` or `Density` to vary per-room, you'd extend `AudioReverbProfile` and add new `Suffix*` constants to `ReverbSendBus`. The architecture supports it; v1 just doesn't ship it.
-3. **One character per bus.** A bus has a single acoustic identity (its `ReverbSendBus` asset). Several zones can route to one bus, but they all get that one character — there is no per-zone variation on a shared bus, and no mixing-by-distance between zones. If two rooms must sound different, author two bus assets.
-4. **Convolution is Windows-only and in beta.** The native convolution path (§15.14) ships for Windows x64 only — macOS and consoles are Phase 4. It's feature-complete and build-validated for that scope, but carries known caveats: no runtime IR swap (the IR is fixed at author/scene-load time), ambient emitters can't render convolution (they fall back to inert parametric defaults — §15.14), and the convolver rebuilds on the audio thread (fine at load time, not yet ready for in-game IR changes).
+3. **Single canonical zone per bus.** Multi-zone-to-bus aggregation picks one zone's profile, not a blend. Cathedral and Cathedral_Crypt produce one set of bus parameters at a time — the variant the listener is in wins, or first-registered wins when listener is elsewhere. Mixing-by-distance isn't on the roadmap.
+4. **No native convolution in v1.** `ReverbSendBus` has reserved schema for convolution (`UseConvolution`, `ImpulseResponse`, `ConvolutionWetTrimDb`) but the parametric SFX Reverb is the only effect Generate authors. Convolution is a future enhancement and the fields are `[HideInInspector]`-marked in the current release.
 
-#### 15.14 Convolution Reverb (Windows, beta)
-
-Convolution is the **alternative engine** for a reverb bus. Instead of Unity's parametric SFX Reverb (which approximates a room from a handful of knobs), a convolution bus convolves the dry send with a real **impulse response** (IR) — a recording of how an actual space (or an external hardware/plugin reverb) responds to an impulse. This captures the true character of cathedrals, stairwells, parking garages, or a favorite Lexicon patch in a way the parametric reverb can't.
-
-It's an **opt-in, per-bus** choice: parametric stays the cheap default for ordinary zones; convolution is the path for hero spaces.
-
-> **Status: beta, Windows x64 only.** Feature-complete and validated in a standalone Windows build, but see the caveats at the end of this section before relying on it. macOS and consoles are Phase 4.
-
-**When to use which:**
-
-| Use parametric (SFX Reverb)                       | Use convolution                                            |
-|---------------------------------------------------|------------------------------------------------------------|
-| Generic / cheap zones, lots of them               | Hero spaces where the room's identity matters              |
-| You want to tune by ear with knobs                | You have (or can capture) a real IR of the space           |
-| Cross-platform today                              | Windows only for now                                       |
-| Live parameter changes are fine                   | IR is fixed at author/scene-load time (no in-game swap)    |
-
-**Authoring a convolution bus:**
-
-1. On the `ReverbSendBus` asset, tick **Use Convolution**. The parametric fields are ignored from here on.
-2. Assign an **Impulse Response** clip. Set its import **Load Type** to *Decompress On Load* or *PCM* so the CPU can read its samples — without this the runtime upload fails (`GetData failed`). Mono or stereo (downmixed to mono in v1); ~4 s at 48 kHz is a typical ceiling for SFX.
-3. Set **Convolution Wet Trim** (dB) to taste — this is the live, cheap level control for the wet path.
-4. Click **Generate Mixer Group** on the asset. This drops the native *SFX Convolution Reverb* plugin on the bus group (instead of SFX Reverb), assigns the bus a free IR slot, and authors the plugin's IR Slot / Wet Trim / IR Gain params.
-5. **Wire the send path** the same way as a parametric bus: run the Occlusion Layout Builder's **Auto-Create** so each slot gets a Send and the bus group gets a Receive. *Without this the bus is silent with no error* — see §15.6 / the workflow note. (This step is identical for parametric and convolution buses; convolution didn't change the send/receive plumbing.)
-
-**Runtime behavior:** the IR samples are uploaded into the plugin's slot table at `AudioManager` startup (`UploadConvolutionIRs()` in `Awake`). The slot table is volatile, so the IRs re-upload cleanly on every play / scene reload. The authored slot index + Wet Trim / IR Gain params live in the mixer asset; the IR *samples* come from this runtime upload. Nothing depends on driving exposed params from script at runtime.
-
-**Requirements:** the native plugin `SFXConvolutionReverb.dll` must be present under `RunTime/Plugins/Windows/x86_64/` with its Plugin Importer set to **Load on startup = true** (without it the effect silently never registers in the mixer — see `CRITICAL_UnityAudio.md` §14). It ships in the repo; you only rebuild it if you change the C++ source under `NativeAudio/SFXConvolutionReverb/`.
-
-**Caveats (beta):**
-
-- **No runtime IR swap.** The IR is fixed once uploaded. Changing IRs during gameplay (zone-driven IR selection, crossfade) is Phase 4 and requires moving the convolver rebuild off the audio thread first.
-- **Ambients can't render convolution.** `AmbientEmitter` uses a per-source *parametric* `AudioReverbFilter`, not the convolution plugin. An ambient whose listener-zone routes to a convolution bus gets that asset's (inert) parametric defaults — **not** the impulse response. Treat ambients as parametric-only for now, or route them through the bus's send/receive.
-- **Convolver rebuild is on the audio thread.** Fine because IRs only (re)assign at author / scene-load time, where the one-time hitch is inaudible. It would glitch if IRs swapped mid-gameplay — hence the no-runtime-swap caveat above.
-- **Malformed/empty IR clips aren't fully guarded yet.** Trust your IR clips; a bad clip's behavior is undefined pending an input-validation pass.
-
-#### 15.15 Troubleshooting
+#### 15.14 Troubleshooting
 
 **"Voices play but no reverb tail."**
 - Confirm `Allow Reverb Send = ✓` on the container.
@@ -7262,12 +7223,11 @@ It's an **opt-in, per-bus** choice: parametric stays the cheap default for ordin
 **"A bus has no character — no decay, no reflections."**
 - Did you run Generate on its `ReverbSendBus` asset? Until you do, the mixer group has no effect on it.
 - Click Validate Wiring on the asset. It'll list every missing piece.
-- Parametric bus: check the asset's `Room` value — at `-10000 dB` (the default) the reverb is intentionally silent. Drag toward 0 to enable.
-- Convolution bus: check it has an `Impulse Response` assigned and that the clip is CPU-readable (Load Type = Decompress On Load / PCM). See §15.14.
+- Check the bus's `Room` value: at `-10000 dB` the reverb is intentionally silent (the default for unconfigured zones). Drag toward 0 to enable.
 
 **"The bus sounds like the wrong room."**
-- Character comes from the bus's own `ReverbSendBus` asset, not from any zone, so "wrong room" means the wrong *asset* is wired. Confirm the zone's `ReverbBus` points at the bus group you think it does, and that you tuned (or assigned the IR to) that same asset.
-- Remember several zones routing to one bus all share that bus's single character — that's by design, not a bug.
+- The listener-side driver picks the canonical zone for each bus. With listener outside any bus-feeding zone, the bus inherits the *first registered* such zone's profile — order in the registry matters in the fallback case. If you have Cathedral and Cathedral_Crypt both feeding Reverb_Cathedral and Cathedral_Crypt happens to be first in the registry, an outside-cathedral listener will hear the crypt variant.
+- Fix by reordering the registry, or by making the two zones share a profile if the variation isn't load-bearing.
 
 **"After re-generating, my mixer-window manual tweaks were wiped."**
 - Generate runs `WriteParametricDefaults`, which pushes the SO's values into the mixer effect's target snapshot. If you've been tuning in the mixer window directly, run **Pull Params ← Mixer** *before* the next Generate to bring the SO into sync. After that, Generate is non-destructive — it writes back what's already there.
@@ -7277,6 +7237,350 @@ It's an **opt-in, per-bus** choice: parametric stays the cheap default for ordin
 
 **"Pool exhaustion warning on a bus that previously worked."**
 - Slot pool exhaustion is the same warning shape from chapter 14 — see that troubleshooting block. Reverb-send voices and occlusion voices share the same per-bus slot pool, so a `weapons` bus configured for 6 slots can handle 6 *combined* occluded-or-reverb-sending voices, not 6 of each.
+
+---
+
+### 16. Audio Loading & Memory
+
+This chapter covers **how clip audio gets into memory and onto a voice** — the RAM footprint of your audio and when the cost of loading it is paid. It's entirely opt-in and tiered. The API surface lives in [API_REFERENCE.md → Loading](API_REFERENCE.md#loading).
+
+#### 16.1 Do I even need this?
+
+| Your situation | What to use | Extra package? |
+|---|---|---|
+| **Small / medium game** | Nothing — clips are direct references and load with the project (the default). **Skip this chapter.** | — |
+| **Lots of audio, occasional hitches on first play** | The **Warmer** (§16.4) — front-load clip data on your schedule. | No |
+| **Open-world / live-service, RAM is the constraint** | The **Addressables backend** (§16.5) — load/unload a region's audio by zone. | `com.unity.addressables` |
+
+Nothing here changes behavior for a project that doesn't opt in. The default path — direct `AudioClip` references resolved synchronously — is unchanged and zero-overhead.
+
+#### 16.2 The three layers
+
+Cheapest first. Each is independent; you can use one without the others.
+
+```
+1. Import policy   — per-category Load Type / compression. Sets each clip's RAM footprint.   (automatic)
+2. Warming         — pre-load a clip's audio DATA ahead of first play, to kill the hitch.     (no package)
+3. Addressables    — load/unload the clip OBJECTS themselves by region, so only the current   (gated package)
+                     zone's audio is resident.
+```
+
+The distinction between layers 2 and 3 matters: **warming** loads the *audio data* of a clip you already hard-reference (the object is already in memory); **Addressables** controls whether the clip *object* is in memory at all. Warming reduces hitches; Addressables reduces peak RAM.
+
+#### 16.3 Import policy (automatic)
+
+The editor import pipeline (`Editor/AudioImport/`) stamps each clip's import settings from its **category preset** (`CategoryPreset.GetDefault`). You don't configure it per clip — you pick the category:
+
+| Category | Load Type | Compression | Preload Audio Data | Why |
+|---|---|---|---|---|
+| UI | Decompress On Load | PCM | yes | tiny, fired often — cheapest to play |
+| SFX | Decompress On Load | ADPCM | yes | short, fired often/overlapping |
+| Music | **Streaming** | Vorbis | no | one instance, long — don't hold PCM in RAM |
+| Ambience | **Streaming** | Vorbis | no | few instances, long |
+| Dialogue | Compressed In Memory | Vorbis | no | many lines, decode on demand |
+
+**The one authoring rule that bites people:** Streaming is **per-instance expensive** — a stream buffer plus disk reads *for every playing voice*. Right for music and long ambience (one or a few instances); **wrong** for a footstep or weapon pool firing many overlapping instances (many disk-streaming voices seeking at once → hitch). The presets already encode the right choice; the mistake is manually setting a short, frequently-fired SFX to Streaming.
+
+| Load Type | RAM | Per-instance cost | Use for |
+|---|---|---|---|
+| Decompress On Load | high (full PCM) | cheapest | short SFX fired often — footsteps, gunshots |
+| Compressed In Memory | medium | decode per play | many medium-length variants |
+| Streaming | ~none (reads disk while playing) | stream buffer + disk seek **per voice** | music, long ambience — **one/few instances only** |
+
+#### 16.4 Warming (no extra package)
+
+Categories with `Preload Audio Data = false` (Music/Ambience = Streaming, Dialogue = Compressed-In-Memory) load their audio data on **first play**, which hitches. The **warmer** front-loads that cost on *your* schedule — e.g. on zone-enter or level-load — operating on the clips you already hard-reference, with no Addressables dependency.
+
+```csharp
+// On zone-enter / level-load, before the sound is needed:
+AudioManager.Instance.WarmContainer(zoneAmbienceContainer); // warms all its clips (recurses Switch/Blend)
+AudioManager.Instance.WarmClip(clip);                       // a single clip
+AudioManager.Instance.WarmClips(clipList);                  // a set, loaded in parallel
+```
+
+- `AmbientSource` warms its loop clip **automatically** on register, so an ambient bed that fades in is typically warm by the time it's audible.
+- Biggest win for **Dialogue** (Compressed-In-Memory — decoding a line otherwise hitches) and the **Ambience first-play**. For pure **Streaming** clips the gain is smaller — they stream at play regardless.
+- Finer control than the all-or-nothing `Preload Audio Data` import flag: you warm exactly the clips you're about to need, when you choose.
+
+> **Addressables blind spot:** the warmer operates on **direct, hard-referenced** clips only. An addressable-authored entry (null clip + address) is invisible to it — its residency is owned by **bank preload** (§16.5), not the warmer. Don't expect `WarmContainer` to warm converted (addressable) content.
+
+`AudioClipWarmer.Unload` exists but is blunt — it frees the data with **no check for live voices**. Only unload data you know nothing is playing. Safe, refcounted residency (that never unloads a clip under a playing voice) is what the Addressables backend adds.
+
+#### 16.5 Addressables backend
+
+Requires **`com.unity.addressables`**. This loads and unloads the clip *objects* themselves by region, so only the current zone's audio is resident. The assembly (`SFXSystem.Addressables`) compiles automatically when the package is present; without it, everything here is dormant and the project runs on direct references — exactly like the netcode adapters (§17).
+
+**Setup:**
+
+1. **Install** `com.unity.addressables` (Package Manager). The `SFXSystem.Addressables` assembly compiles automatically when present.
+2. **Mark the region's clips Addressable** and give them a shared **label** (e.g. `zone_crypt`) — by hand in the Addressables Groups window, or (easier) via the Authoring window (§16.6).
+3. **Author the container entries as addressable.** Easiest is the **Addressable Audio Authoring** window (§16.6): select the containers, pick the label + address style, hit Convert. By hand: set each entry's **address** to the clip's Addressable address and its **clip** to **None**. *Per entry it's either a direct clip or an address — a populated clip would eager-load and defeat the point.*
+4. **Add a `Zone Audio Bank`** component to the AudioZone's GameObject (Add Component ▸ *Audio ▸ Loading ▸ Zone Audio Bank*) and set its **Bank Label** to the label from step 2.
+5. **Put one `Addressable Audio Runtime`** component in the scene (Add Component ▸ *Audio ▸ Loading ▸ Addressable Audio Runtime*). It installs the addressable clip source and preloads/releases each zone's bank as the listener enters/exits.
+
+Now a zone's clips **load on enter** and **unload (after a short linger) on exit**. A clip still playing when you leave a zone stays resident until the voice finishes — **no mid-play unload**.
+
+**Voice-safe residency (the important part).** A zone's bank releasing on exit does **not** immediately unload a clip a voice is still playing — a looping ambience, or a one-shot tail ringing out as you cross the border. Residency is refcounted across three holders:
+
+```
+clip resident while  (banks holding it)  +  (live voices bound to it)  +  (explicit pins)  > 0
+```
+
+The actual unload fires only when that total hits **0**, and then only after a **linger** window (default **5 s**) to absorb zone-border dithering (step out / step back in). A stuck-high refcount is only wasted RAM, never a click — the design deliberately errs toward holding the ref.
+
+**Debug overlay.** Tick **Show Debug Overlay** on `Addressable Audio Runtime` to see each address's `bank / voice / pin / total` refcounts and warm/cold state live during Play. On zone-exit, `bank` drops to 0 but a playing voice keeps `voice ≥ 1`, so the clip stays warm until the voice ends plus linger. Off by default; zero cost when off.
+
+**Addressable ambiences.** `AmbientSource` can be addressable too: set its **Looping Clip Address** and leave **Looping Clip** empty. The source **pins** the clip loaded for its active life (the `pin` refcount), so it's ready even when the ambience is heard through a portal *before* you enter the zone. Its resolved clip (null while an addressable clip is still loading) is exposed as `PlayableClip`; propagation reads that and defers until it's ready.
+
+#### 16.6 Authoring window — convert clips in one click
+
+**Window ▸ Audio System ▸ Addressable Audio Authoring** does the whole "mark addressable + set address + assign label + null the direct clip" in one click, across Random / Sequence / Routing containers — no Groups-window round-trip.
+
+1. **Select** one or more AudioContainer assets in the Project.
+2. Set options (all in-window):
+   - **Group** — dropdown of existing Addressables groups, plus *Default Group* and *New group…*. Clips are placed here.
+   - **Bank Label** — dropdown of existing labels, plus *New label…*. This is the bank a `ZoneAudioBank` loads. Optional.
+   - **Address Style** — how the key reads: *Label-scoped* (default) `<label>/<clip>` e.g. `Zone_Crypt/Add-S_1` (readable + organized); *Plain name* `Add-S_1`; *Asset path* `Assets/Audio/Add-S_1.wav`; *GUID* (rename-proof, unreadable). Collisions auto-resolve with a numeric suffix (`…_2`).
+3. **Convert to Addressable** — marks each clip addressable (into the group, labeled), writes the readable address onto the container entry, nulls the direct clip. Undo-able.
+4. **Revert to Direct** — relinks the direct clips from their addresses and clears the addresses. Assets stay marked Addressable by default; tick **Revert: also remove from Addressables** (with a confirmation) to fully un-addressable them — only safe when nothing else uses those addresses.
+
+> Convert skips entries that are already addressable (clip already null). To re-address with a different style, **Revert first, then Convert**. The window logs what it touched.
+
+#### 16.7 Diagnostics
+
+- **Precise miss warnings.** An address that can't resolve — **no backend active**, a **typo**, or an **unregistered** key — logs a precise, clickable, **once-per-address** warning instead of dropping silently. (An *expected* cold-drop — backend active, clip simply not preloaded yet — is not warned.)
+- **Loading Validator.** **Window ▸ Audio System ▸ Loading Validator** → **Validate** scans every container asset and the open scene's `AmbientSource`s and reports: an address but no backend; an unregistered / typo'd address; an entry with *both* a clip and an address; addressable content but no `AddressableAudioRuntime` in the scene. Each finding has a **Select** button. The validator uses reflection, so it runs **even without the Addressables package installed**.
+
+#### 16.8 How it works (architecture)
+
+Same dependency-inversion pattern as the netcode layer: a small seam in the core, with the package-specific weight quarantined in a gated assembly.
+
+```
+SFXSystem.Runtime
+   IAudioClipSource (seam)  ──default──►  DirectClipSource   (returns the serialized clip, sync, zero overhead)
+        ▲
+SFXSystem.Addressables  (gated by com.unity.addressables)
+   AddressableClipSource  ──►  refcounted Addressables load/unload by region
+   AudioBank.Preload()/Release()  (a bank = an Addressables label)
+```
+
+- **Containers never read `.clip` directly.** They resolve through `AudioClipSources.Active` (an `IAudioClipSource`). The default `DirectClipSource` returns the serialized clip synchronously. The Addressables backend drops in as an alternative source without re-touching a single `Play()` method.
+- **An entry holds EITHER a direct `AudioClip` OR a GUID address string** — never both. The core stays free of any Addressables type.
+- **The play path stays synchronous on the warm path.** `TryGetClip` returns a resident clip instantly; only a *cold* clip returns false and the play is dropped (drop-on-cold, v1). Bank preload keeps zones warm, so ~every play is warm.
+- **Voice-level refcount** is taken at the two chokepoints already in the core: `OnVoiceBound` (when `source.clip` is assigned) and `OnVoiceReleased` (when the voice returns to the pool). That's what makes a bank release safe against a playing voice.
+- **Zone binding is decoupled.** `PropagationManager` raises `ListenerEnteredZone` / `ExitedZone` events; the Addressables assembly subscribes. Propagation never depends on Addressables, and vice-versa — the dependency is one-way (Addressables → core).
+
+#### 16.9 Status & limitations
+
+- **Import policy & Warming:** shipped and stable; behavior-neutral for existing projects.
+- **Addressables backend:** committed and compiling under `com.unity.addressables`. The **correctness-critical voice-hold behavior is verified** (a bank releasing on zone-exit does not unload a clip a voice is still playing). Covered: Random / Sequence / Routing per-entry addresses, the `AmbientSource` pin path, diagnostics + validator, and the authoring window.
+- **Still being finalized (know before you ship on it):** the **quantitative RAM-win has not yet been profiled on a build** — editor memory isn't representative, so profile your own scale scene if peak-RAM reduction is the goal. The remaining edge-case sweep (shared clip across two zones, teardown reset, border-linger, cold-drop, direct passthrough) is in progress; the Sequence-container addressable path is exercised mostly in theory (Random was the primary test subject).
+- **Out of scope (v1):** drop-on-cold (not defer-and-play-late) — keep zones preloaded; only the clip leaf is lazy (events/containers stay eager); zone-driven banks are one Addressables label per `AudioZone`.
+
+#### 16.10 Troubleshooting
+
+| Symptom | Likely cause / fix |
+|---|---|
+| Addressable sound never plays | The clip is **cold** (its zone bank wasn't preloaded) → drop-on-cold. Confirm a `ZoneAudioBank` with the right label is on the zone and an `AddressableAudioRuntime` is in the scene. Watch the Debug Overlay. |
+| `references addressable key '…', but no Addressables backend is active` | No backend installed/active: install `com.unity.addressables` **and** add an `AddressableAudioRuntime`, or assign a direct `AudioClip` to that entry. |
+| An entry has both a clip and an address | A contradiction — the populated clip eager-loads. The **Loading Validator** flags it; null the direct clip (or Revert the entry). |
+| Clip unloads mid-play / click on zone exit | Should not happen — residency is voice-refcounted. Check you didn't call `AudioClipWarmer.Unload` (blunt) or a raw `Addressables.Release` outside the refcounted source. |
+| Load/unload churn at a zone border | Increase **Linger Seconds** on `AddressableAudioRuntime`. |
+| `WarmContainer` doesn't warm my converted content | Warming operates on **direct** clips only; addressable entries are owned by bank preload (§16.4). |
+| Footsteps/weapons hitch under load | A short, frequently-fired SFX is set to **Streaming** — a per-voice disk stream. Set it to Decompress On Load (§16.3). |
+| Addressable ambience silent until I enter the zone | Set the `AmbientSource`'s **Looping Clip Address** (leave **Looping Clip** empty) so it *pins* the clip. |
+
+---
+
+### 17. Multiplayer (Netcode)
+
+Multiplayer support lets you **post a sound on one player's machine and have every player hear it** — without your audio code knowing which netcode stack the project uses, and without changing anything about how local audio works. The API surface lives in [API_REFERENCE.md → Netcode (Multiplayer)](API_REFERENCE.md#netcode-multiplayer).
+
+**Applies to:** `SFXSystem.Netcode` (Phases 0–7). **Verified backends:** FishNet v4 (Phases 0–7 on one-PC MPPM; two-PC validation pending) · Netcode for GameObjects (NGO) 2.x (compiles + coexists; full behaviour sweep pending). **Planned:** Mirror · NGO 1.x back-compat · position quantization.
+
+#### 17.1 The one thing to understand first
+
+**No audio ever crosses the network.** When you fire a networked sound, all that travels is a tiny **~36-byte descriptor** — "play event #X at position Y (optionally attached to object Z)". Each machine then plays that event **locally** through the normal audio engine. You are syncing *intent*, not *sound*. That's why it's cheap, and why every local feature (occlusion, reverb, propagation, voices) keeps working untouched. Even the musical sync (§17.6) sends only *timing* (tempo + a phase anchor), never samples.
+
+**In one sentence:** *Use `PostNetworkedEvent` instead of `PostEvent` for sounds everyone should hear; everything else stays exactly the same.*
+
+The audio system never references a netcode package. You install **one** stack (NGO, FishNet, …) and the matching **adapter** lights up automatically. A backend you didn't install never compiles, so it can never break your build.
+
+#### 17.2 How it works
+
+```
+   PostNetworkedEvent("door_open", pos)
+            │
+            ├─ plays LOCALLY right now  ──────────────►  you hear it instantly (local echo)
+            │
+            └─ Broadcast(descriptor) ─► [adapter RPC] ─► server ─► other clients
+                                                                      │
+                                                         PostEvent(id, pos) on each
+```
+
+- **Local echo:** the instigator plays the sound immediately (zero network latency); only *other* peers get it over the wire. No double-play.
+- **Authority:** server-authoritative relay — the client sends to the server, the server validates and relays to everyone else. (The adapter implements this; the core doesn't care.)
+- **Identity on the wire:** each `AudioEvent` has a **stable ID** (a build-deterministic number derived from the asset's GUID). Both ends resolve the same ID to the same event. *Events must have a captured ID to be networkable* — see §17.3 step 2.
+- **Seclusion:** delete the whole `Netcode` folder and your single-player game compiles and behaves identically. Networking is purely additive.
+
+| Layer | What it does |
+|---|---|
+| `SFXSystem.Runtime` | The audio engine. Knows nothing about networking. |
+| `SFXSystem.Netcode` (core) | The agnostic contract: payload, transport interface, router, replicator, clock/transport, and the `NetworkedAudioManager` façade. References Runtime only. |
+| `SFXSystem.Netcode.Ngo` / `.FishNet` / … | One tiny adapter per backend — the *only* code that references that stack. Auto-enabled when its package is installed. |
+
+#### 17.3 Quick Start
+
+**Step 1 — Install a netcode backend.** NGO: Package Manager → *Netcode for GameObjects*. FishNet: import from the Asset Store. The matching adapter (`SFXSystem.Netcode.Ngo` / `.FishNet`) enables itself. Install only **one** stack.
+
+**Step 2 — Give your events stable IDs.** Open **Window ▸ Audio System ▸ Audio Event IDs** and click **Capture All Missing IDs**. Every event needs a non-zero **Stable ID** to be networkable. Newly created events get one automatically on import; the sweep back-fills older ones.
+
+**Step 3 — Put the transport in your scene.** Create one networked object and add the matching transport component: NGO → `NetworkObject` + `NgoAudioTransport`; FishNet → `NetworkObject` + `FishNetAudioTransport`. **Exactly one** per session, on a persistent networked object (e.g. an `AudioNetwork` GameObject) — **not** on per-player objects. It must be **active** in the scene.
+
+**Step 4 — (optional) Add settings & health-check.** Drop a **`NetworkAudioSettings`** component in the scene to opt into proximity culling, an authority validator, and the clock tunables (§17.5). With none present, sensible defaults apply (validation allow-all, culling off). Open **Window ▸ Audio System ▸ Network Audio Debug** in Play mode to watch live session/clock/loop state.
+
+**Step 5 — Post networked sounds.**
+```csharp
+using AudioSystem.Netcode;
+
+// Heard by everyone (local echo + relay to others):
+NetworkedAudioManager.PostNetworkedEvent("door_open", transform.position);
+
+// Still 100% local — only this client hears it. Unchanged:
+AudioManager.Instance.PostEvent("ui_click");
+```
+
+With no live session (single-player, not connected), `PostNetworkedEvent` gracefully falls back to a normal local play — so the same call works everywhere.
+
+> **Authoring note:** the per-event **Multiplayer** foldout in the `AudioEvent` inspector (§17.4) only appears once a netcode backend is installed. The fields it exposes live on the Runtime `AudioEvent` and are inert without the `Netcode` layer, so single-player projects stay uncluttered.
+
+#### 17.4 Local vs networked — the mental model
+
+| Call | Who hears it | Use it for |
+|---|---|---|
+| `AudioManager.Instance.PostEvent(...)` | **only this client** | UI clicks, this player's own HUD, anything client-private |
+| `NetworkedAudioManager.PostNetworkedEvent(...)` | **everyone** | gunshots, doors, explosions, world sounds all players share |
+| `NetworkedAudioManager.PostServerEvent(...)` | **everyone** (from the server) | round-start stingers, objective sounds the *server* decides — no local instigator |
+
+Rule of thumb: if another player should hear it, use `PostNetworkedEvent`. If the **server** is the authority for it (no single client instigated it), use `PostServerEvent`. Otherwise use `PostEvent`.
+
+Every capability below stays descriptor-only — still no audio on the wire.
+
+**Attach a sound to a moving object (emitter binding).** Pass a networked `GameObject` and the sound **follows it on every client** instead of playing at a frozen point:
+```csharp
+NetworkedAudioManager.PostNetworkedEvent("grenade_bounce", grenade.transform.position, grenade);
+```
+The object needs a `NetworkObject`. Remote clients resolve its net-id and parent the voice to it; `position` is the spawn anchor **and** the fallback. If the object isn't resolvable yet (its spawn message may still be in flight), the sound is held for a short retry window (~0.5 s), then falls back to the static position — never a frozen sound at the origin, never an error.
+
+**Shared loops you can stop (networked lifetime).** For a sound that must **start and later stop for everyone** — an alarm, a generator hum, a held ambience — use the loop API. It returns a handle:
+```csharp
+NetworkedSoundHandle alarm = NetworkedAudioManager.PostNetworkedLoop("alarm_loop", pos, alarmObj);
+// …later, stop it on every client:
+NetworkedAudioManager.StopNetworked(alarm);
+```
+- A **late joiner** automatically hears loops already running: the server keeps a registry of active loops and replays them to the new client only.
+- **Loop sync tiers** control the joiner's phase — authored per-event (Multiplayer foldout, *Loop Sync Tier*): **0 None** (joiner starts from the beginning; everyone free-runs); **1 Aligned at join** (joiner fast-forwards into the shared phase once, then free-runs); **2 Phase-locked** (continuously grid-anchored and gapless — stays in phase across all machines; use for musical/rhythmic loops). Tier 2 **requires variation parity** — leave *Independent Variation* off, or each client phase-locks a *different* clip (the inspector warns). *Only meaningful for a loop that repeats one clip; an auto-advancing Sequence container always free-runs.*
+- **Off-session** the same calls degrade to a plain local loop; the handle still stops it. Persistence is an **explicit** choice (this API), never inferred from a container's loop flag.
+
+**Same random variant on every client (variation parity).** A `RandomContainer` normally rolls independently per machine. Networked posts force the **same** variant — clip choice *and* the per-voice pitch/volume roll — on every client by default.
+```csharp
+NetworkedAudioManager.PostNetworkedEvent("footstep", pos);                              // identical everywhere (default)
+NetworkedAudioManager.PostNetworkedEvent("crowd_murmur", pos, independentVariation: true); // each client rolls its own
+```
+`independentVariation` is a nullable bool: `null` (default) uses the event's authored **Independent Variation (default)** flag; `true`/`false` overrides per call. Known edge: a `SequenceContainer` in **Random order** past its first entry escapes the seed scope; Forward/Reverse/PingPong are unaffected.
+
+**Server-authored sounds.** When the **server** is the authority for a sound with no single client instigator, `PostServer*` originates from the server to **everyone**, with **no local echo**:
+```csharp
+NetworkedAudioManager.PostServerEvent("round_start", Vector3.zero);          // server only — warns + no-ops on a client
+NetworkedSoundHandle hum = NetworkedAudioManager.PostServerLoop("reactor_hum", reactorPos, reactor);
+NetworkedAudioManager.StopNetworked(hum);                                    // server-authored stop → All
+```
+Client-instigated relays run through a server-side **authority validator** first (assign `NetworkAudioSettings.ServerValidator` in code); reject → the sound is dropped for others (the instigator still heard its echo). A client can stop only loops it owns; server-authored loops can only be stopped by the server.
+
+**Proximity culling — *don't send*.** With culling on, the server sends a spatial (3D) sound **only to clients whose listener is within its audible radius** — the packet is *never sent* out of range. That halves fanout and closes an audio-wallhack. 2D sounds are never culled.
+```csharp
+var settings = FindObjectOfType<NetworkAudioSettings>();
+settings.ProximityCulling = true;
+settings.ListenerPositionProvider = clientId => PlayerPositions.TryGet(clientId, out var p) ? p : (Vector3?)null;
+```
+Return `null` from the provider when a position is unknown → that client is **not** culled (fail-safe). A null provider makes culling **inert** (the Network Audio Debug window flags this). Active loops are re-evaluated over time (~33 Hz): a listener walking into range starts hearing the loop.
+
+**Per-event reliability.** Every relay is **reliable** by default. Mark spammy positional one-shots (footsteps, full-auto gunfire) **Unreliable Delivery** in the Multiplayer foldout to send them on the unreliable channel (lower overhead, no head-of-line blocking). Loops, stops, snapshots, and scheduled cues always stay reliable.
+
+#### 17.5 Per-event authoring (Multiplayer foldout)
+
+Shown in the `AudioEvent` inspector only when a netcode backend is installed:
+
+| Field | Description |
+|---|---|
+| `Unreliable Delivery` | Relay this event's one-shots on the unreliable channel. |
+| `Independent Variation (default)` | Default for `independentVariation` when a post passes `null`. |
+| `Loop Sync Tier` | 0 None / 1 Aligned-at-join / 2 Phase-locked. Tier 2 needs variation parity. |
+
+`NetworkAudioSettings` (a scene component) holds the culling/clock config and the game-supplied hooks (`ListenerPositionProvider`, `ServerValidator`). See [API_REFERENCE.md → Netcode (Multiplayer)](API_REFERENCE.md#netcode-multiplayer) for the full member list.
+
+#### 17.6 Musical sync — scheduled & quantized cues
+
+For cross-machine *rhythmic* timing, the layer adds a shared **network clock** (maps network time onto each machine's local audio clock) and an optional **musical transport** (tempo + phase). Cues land together on every machine — the industry transport-and-quantize model, not varispeed.
+
+```csharp
+// Fire on a shared network time (each client maps it to its own dsp clock):
+double t = NetworkClock.NetworkTime + 0.5;
+NetworkedAudioManager.PostNetworkedScheduled("beep", pos, t);
+
+// Server sets tempo once (networked on change, replayed to late joiners):
+NetworkMusicTransport.SetTempo(bpm: 128, beatsPerBar: 4);
+
+// Quantize a cue to the next beat/bar of the shared grid:
+NetworkedAudioManager.PostNetworkedQuantized("stinger", pos, Quantize.NextBar);
+```
+
+- A scheduled cue is clamped to at least a minimum lead ahead (so even a distant client receives it before its onset); one that still arrives late is dropped rather than fired out-of-phase.
+- `PostServerScheduled` / `PostServerQuantized` are the server-authored twins.
+- A mid-session `SetTempo` change re-anchors **seamlessly at the next bar** of the current grid.
+- **Scheduled/quantized cues are global (non-positional) by design** and bypass proximity culling — they're for music, not positional gameplay.
+- `NetworkClock.ResyncClock()` forces a hard re-sample after a known hitch.
+
+#### 17.7 Per-backend notes
+
+**NGO (Netcode for GameObjects) 2.x** — Adapter `NgoAudioTransport`, gated on `com.unity.netcode.gameobjects` (`SFXSYSTEM_NGO`). In-scene `NetworkObject`s auto-spawn on server start. Late-join snapshot fires from `OnClientConnectedCallback` (NGO has no per-observer hook, so it relies on scene-object sync completing before the callback). Server id is 0 and remote clients start at 1. *A full Phase 4–7 behaviour sweep on NGO is still pending; it compiles and coexists with FishNet.*
+
+**FishNet v4** — Adapter `FishNetAudioTransport`, gated on the `FISHNET` define. The transport's `NetworkObject` **must be active in the loaded scene** — it only registers once the object network-spawns (if a freshly added object doesn't spawn, save the scene). Late-join snapshot fires from `OnSpawnServer(NetworkConnection)` — per-observer, robust timing. Client ids can start at 0, so server-authored loop ids use a reserved `0xFFFFFFFF` owner namespace (handled for you).
+
+> Run **one** backend at a time. Both adapters can be *present* in the project (each is gated), but you start a session with a single stack.
+
+#### 17.8 Current limitations (by design, for now)
+
+- **Networked events should be "play" sounds.** Global state changes (RTPC / Switch / State / ducking) stay **locally driven** by each client's own game logic — networked posting doesn't replicate global audio state. (Variation parity covers randomness *within* a chosen branch, not the switch/state/RTPC input that chooses the branch.)
+- **Scheduled / quantized cues are global (non-positional)** and bypass proximity culling by design — they're for musical sync, not positional gameplay.
+- **Tier-2 phase-locked loops are delivered to all peers** (the culler skips them).
+- **Cross-machine tightness is bounded by the clock estimate** — quantization buys slot-agreement and drift-immunity, not closeness.
+- **Position is full precision** (quantization for smaller packets is a future optimization). **Static / single-context** (one `AudioManager`, one router, one transport per process).
+- **Scale.** Built for co-op and competitive sessions, scaling as far as your chosen netcode's authoritative-server model does (typically tens of players). Adds proximity culling but not MMO-grade interest management or sharding; for hundreds+ concurrent players a different replication architecture is required.
+- **Breadth still open:** Mirror adapter and NGO 1.x back-compat.
+
+#### 17.9 Extending: writing a new backend adapter
+
+1. Create a gated assembly under `Netcode/Adapters/<Stack>/` referencing `SFXSystem.Runtime`, `SFXSystem.Netcode`, and that stack's runtime assembly, constrained on the stack's define symbol.
+2. Implement `INetworkAudioTransport` on a networked behaviour: **Play** via the stack's RPCs in `Broadcast`, raise `OnEventReceived` on receipt, marshal the `emitter` GameObject to a net-id and implement `TryResolveEmitter`; **Stop** via `BroadcastStop` → `OnStopReceived`; **Scope `All`** originates directly to all clients + host (never a dedicated server); **Scheduled / transport** implement `BroadcastScheduled` / `BroadcastTransport` and raise `OnScheduledReceived` / `OnTransportReceived` / `OnLoopJoinReceived`, expose `ServerTime` + `RoundTripTime`; **Late join** replays `NetworkAudioRegistry.Snapshot(...)` to a joining client; **Register** with `NetworkAudioRouter.Register(this)` / `Unregister(this)` and pump `AudioEventReplicator.Tick()` + `NetworkClock.Tick()` from `Update`.
+3. Relay to everyone **except the sender** (it already played the local echo).
+
+The core and the audio runtime never change.
+
+#### 17.10 Troubleshooting
+
+| Symptom | Likely cause / fix |
+|---|---|
+| Sound plays locally but not on other clients | Transport component missing/inactive, or not on a spawned `NetworkObject`. Check **Network Audio Debug** — is the session Active? |
+| `'<event>' has no stable id` warning | Run **Audio Event IDs ▸ Capture All Missing IDs**. |
+| Nothing networks at all | Backend not installed, or no `NetworkManager`/transport in the scene. |
+| Hearing the sound twice while testing | Multiplayer Play Mode plays *both* virtual players through one set of speakers (a flam). Expected; on real separate machines each player hears it once. |
+| A moving sound plays at a frozen point on remote clients | The emitter object has no `NetworkObject`, or isn't spawned/observed on that client — it fell back to the static position. |
+| A late joiner doesn't hear a running loop | Only `PostNetworkedLoop` sounds are snapshotted. On NGO, confirm the joiner synced the transport object before the snapshot fired (§17.7). |
+| `StopNetworked` doesn't silence remotes | Keep the `NetworkedSoundHandle` from `PostNetworkedLoop` and pass *that* handle. |
+| Culling on but everyone still hears everything | No `ListenerPositionProvider` assigned → culling is inert. Network Audio Debug ▸ Config Health flags this. |
+| A Tier-2 loop plays a different clip per client | The event has both *Loop Sync Tier 2* and *Independent Variation* on. Turn Independent Variation off (the inspector warns). |
+| Quantized cue does nothing / warns | No musical transport set — call `NetworkMusicTransport.SetTempo(...)` on the server first. |
 
 ---
 
@@ -7654,4 +7958,4 @@ After migration:
 
 *For API signatures and full type listings, see [API_REFERENCE.md](API_REFERENCE.md).*
 
-*SFX System v2.5.0 — Professional Audio Middleware for Unity*
+*SFX System v3.0.0 — Professional Audio Middleware for Unity*
