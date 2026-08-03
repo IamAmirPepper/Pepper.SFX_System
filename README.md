@@ -2,12 +2,6 @@
 
 **Free audio middleware for Unity — events, containers, hierarchical buses, mixer-slot occlusion, per-zone reverb, and portal-driven propagation. A complete sound-design workflow, no license fee.**
 
-[![Unity](https://img.shields.io/badge/Unity-6000.0+-black.svg?style=flat&logo=unity)](https://unity.com/)
-[![Version](https://img.shields.io/github/package-json/v/IamAmirPepper/Pepper.SFX_System?label=version)](./package.json)
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](./LICENSE.txt)
-[![Docs](https://img.shields.io/badge/docs-USER__GUIDE-blue.svg)](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~)
-
-
 <!-- Optional: hero screenshot or short demo gif. The Quick Sound Setup Wizard
      or a scene gizmo of zones/portals would both work well here. -->
 
@@ -166,3 +160,12 @@ For licensing questions or commercial arrangements, contact the author below.
 **Amir Pepper**
 [amirpepper96@gmail.com](mailto:amirpepper96@gmail.com)
 [github.com/IamAmirPepper](https://github.com/IamAmirPepper)
+
+
+## Images
+
+[![Unity](https://img.shields.io/badge/Unity-6000.0+-black.svg?style=flat&logo=unity)](https://unity.com/)
+[![Version](https://img.shields.io/github/package-json/v/IamAmirPepper/Pepper.SFX_System?label=version)](./package.json)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](./LICENSE.txt)
+[![Docs](https://img.shields.io/badge/docs-USER__GUIDE-blue.svg)](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~)
+
