@@ -8,16 +8,7 @@
 > ℹ️ **This is the free version** — the complete single-player audio middleware, shipped as compiled DLLs. A **full version** (multiplayer audio, zone-streamed memory via Addressables, extra pro tooling, and complete source code) is coming to the Unity Asset Store — with a one-click upgrade tool so nothing you build here goes to waste.
 
 
-![Audio Manager](image.png)
 
-![Propagation Manager](image-4.png)
-
-![Random Container](image-1.png)
-
-![Audio Event](image-2.png)
-
-![Import Manager](image-3.png)
----
 
 ## Why this exists
 
@@ -147,6 +138,18 @@ Full release notes: [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
+![Audio Manager](image.png)
+
+![Propagation Manager](image-4.png)
+
+![Random Container](image-1.png)
+
+![Audio Event](image-2.png)
+
+![Import Manager](image-3.png)
+---
+
+---
 ## License
 
 **Proprietary.** Free to use in your Unity projects. Do not redistribute or modify. See [LICENSE.txt](./LICENSE.txt).
