@@ -1,4 +1,4 @@
-# Pepper's SFX System
+# Pepper.SFX
 
 **Free audio middleware for Unity — events, containers, hierarchical buses, mixer-slot occlusion, per-zone reverb, and portal-driven propagation. A complete sound-design workflow, no license fee.**
 
