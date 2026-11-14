@@ -1,0 +1,298 @@
+# Publishes a GitHub Release for each version tag.
+#
+# Push a tag like v3.1.1 and this checks the release (versions, changelog, license, DLLs and their ids), then
+# publishes the GitHub Release "Pepper.SFX 3.1.1": the install line, then that version's section of CHANGELOG.md.
+# If a check fails, nothing is published and the run fails, so GitHub emails whoever pushed the tag.
+#
+# It can also be run by hand, from Actions > Release > Run workflow. See .github/RELEASING.md.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag, like v3.1.0'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run: check the release and show its notes, but publish nothing'
+        type: boolean
+        default: true
+
+# One run per tag at a time, so two runs can't both create its Release.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+
+permissions:
+  contents: write # to create and edit Releases
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TAG_INPUT: ${{ inputs.tag || github.ref_name }}
+  DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+  INSTALL_URL: https://github.com/IamAmirPepper/Pepper.SFX_System.git
+  NOTES_LIMIT: 125000 # GitHub's limit for a Release's notes, in characters
+  # Every free user's project points at these two guids. They must never change.
+  RUNTIME_DLL_GUID: 185cca1de5fe9184da36f5ffa2232159
+  EDITOR_DLL_GUID: 350c266aa26477146a19f969cf09e021
+
+jobs:
+  release:
+    name: Release ${{ inputs.tag || github.ref_name }}${{ inputs.dry_run && ' (dry run)' || '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Work out what to check
+        id: target
+        run: |
+          tag="$(printf '%s' "$TAG_INPUT" | tr -d '[:space:]')"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error title=Not a version tag::'$tag' isn't a version tag. Tags look like v3.1.0, or v3.2.0-beta.1 for a pre-release."
+            exit 1
+          fi
+          version="${tag#v}"
+          repo="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+
+          set +e
+          git ls-remote --exit-code --tags "$repo" "refs/tags/$tag" > /dev/null
+          found=$?
+          set -e
+          if [[ $found -eq 0 ]]; then
+            ref="refs/tags/$tag"
+            source="the tag $tag"
+          elif [[ $found -eq 2 && "$DRY_RUN" == true ]]; then
+            ref="$GITHUB_SHA"
+            source="the branch $GITHUB_REF_NAME, as if it were tagged $tag (the tag isn't on GitHub yet)"
+            echo "::notice::The tag $tag isn't on GitHub yet, so this dry run checks the branch $GITHUB_REF_NAME instead."
+          elif [[ $found -eq 2 ]]; then
+            echo "::error title=No such tag::The tag $tag isn't on GitHub. Push it first, or tick 'Dry run' to check a branch before you tag it."
+            exit 1
+          else
+            echo "::error::Couldn't look up the tag $tag on GitHub (git ls-remote exit code $found). Run it again."
+            exit 1
+          fi
+
+          # A version with a "-" in it (3.2.0-beta.1) is a pre-release. Otherwise it's marked "Latest" only if no
+          # higher version is tagged, so running this again for an old tag doesn't take "Latest" from a newer one.
+          if [[ "$version" == *-* ]]; then
+            prerelease=true
+            latest=false
+          else
+            prerelease=false
+            highest="$(git ls-remote --tags --refs "$repo" 'v*' | sed 's|.*refs/tags/||' |
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+            top="$(printf '%s\n%s\n' "$highest" "$tag" | sed '/^$/d' | sort -V | tail -n 1)"
+            if [[ "$top" == "$tag" ]]; then latest=true; else latest=false; fi
+          fi
+
+          {
+            echo "TAG=$tag"
+            echo "VERSION=$version"
+            echo "SOURCE=$source"
+            echo "PRERELEASE=$prerelease"
+            echo "LATEST=$latest"
+          } >> "$GITHUB_ENV"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Checking $source. Pre-release: $prerelease. Latest: $latest. Dry run: $DRY_RUN."
+
+      - name: Get the release files
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+          persist-credentials: false
+
+      - name: Check the release
+        run: |
+          problems=()
+          problem() {
+            problems+=("$1")
+            local m="${1//'%'/'%25'}"
+            echo "::error::$m"
+          }
+
+          # package.json: Unity installs the package under this name, at this version.
+          if [[ ! -f package.json ]]; then
+            problem "\`package.json\` is missing."
+          elif ! pkg="$(node -e '
+              const p = JSON.parse(require("fs").readFileSync("package.json", "utf8").replace(/^﻿/, ""));
+              console.log(String(p.name ?? "")); console.log(String(p.version ?? ""));' 2> /dev/null)"; then
+            problem "\`package.json\` isn't valid JSON, so Unity can't read it either."
+          else
+            { read -r pkg_name; read -r pkg_version; } <<< "$pkg"
+            if [[ "$pkg_name" != com.pepper.sfx ]]; then
+              problem "\`package.json\` names the package '$pkg_name', not com.pepper.sfx. Every user's project installs it under that name."
+            fi
+            if [[ "$pkg_version" != "$VERSION" ]]; then
+              problem "\`package.json\` says version '$pkg_version', but the tag is $TAG. They must match."
+            fi
+          fi
+
+          # The guides: the "**Version:**" line at their top is this version, without any -dev.N (the release
+          # script writes it that way).
+          guide_version="${VERSION%%-*}"
+          shopt -s nullglob
+          guides=(Documentation~/*.md)
+          if (( ${#guides[@]} == 0 )); then
+            problem "\`Documentation~\` has no guides in it."
+          fi
+          for g in "${guides[@]}"; do
+            line="$(awk '{ sub(/\r$/, "") } /^\*\*Version:\*\*/ { print; exit }' "$g")"
+            if [[ -z "$line" ]]; then
+              problem "\`$g\` has no **Version:** line at its top."
+              continue
+            fi
+            v="$(sed -E 's/^\*\*Version:\*\*[[:space:]]*//; s/[[:space:]]+$//' <<< "$line")"
+            if [[ "$v" != "$guide_version" ]]; then
+              problem "\`$g\` says **Version:** $v at its top, but this release is $guide_version."
+            fi
+          done
+
+          # CHANGELOG.md: a "## <version>" section, which becomes the Release notes.
+          section="$RUNNER_TEMP/changelog-section.md"
+          if [[ ! -f CHANGELOG.md ]]; then
+            problem "\`CHANGELOG.md\` is missing."
+          else
+            awk -v v="$VERSION" '
+              { sub(/\r$/, "") }
+              $1 == "##" && $2 == v { on = 1; print; next }
+              on && /^## / { exit }
+              on && /^[[:space:]]*$/ { blank++; next }
+              on { while (blank > 0) { print ""; blank-- }; print }
+            ' CHANGELOG.md > "$section"
+            if [[ ! -s "$section" ]]; then
+              problem "\`CHANGELOG.md\` has no '## $VERSION' section. Its text becomes the Release notes."
+            elif (( $(wc -l < "$section") < 2 )); then
+              problem "\`CHANGELOG.md\`'s '## $VERSION' section is empty. Its text becomes the Release notes."
+            fi
+          fi
+
+          # LICENSE.txt: no blank left to fill in, like "[date]". And the notices it points to.
+          if [[ ! -f LICENSE.txt ]]; then
+            problem "\`LICENSE.txt\` is missing."
+          else
+            while IFS= read -r hit; do
+              text="$(sed -E 's/^[[:space:]]+//' <<< "${hit#*:}")"
+              problem "\`LICENSE.txt\` line ${hit%%:*} has something in square brackets, a blank that was never filled in: $text"
+            done < <(grep -n '[][]' LICENSE.txt | tr -d '\r' || true)
+          fi
+          if [[ ! -s "Third-Party Notices.txt" ]]; then
+            problem "\`Third-Party Notices.txt\` is missing (or empty). LICENSE.txt points users to it."
+          fi
+
+          # The DLLs and the reverb plugin, each with the .meta file Unity needs in a package installed from git.
+          for f in Runtime/SFXSystem.Runtime.dll Editor/SFXSystem.Editor.dll \
+                   Runtime/Plugins/Windows/x86_64/SFXConvolutionReverb.dll; do
+            [[ -s "$f" ]] || problem "\`$f\` is missing (or empty)."
+            [[ -s "$f.meta" ]] || problem "\`$f.meta\` is missing. Without it, Unity ignores the file in an installed package."
+          done
+
+          # The DLLs' guids: every free user's project points at them, so a new guid breaks them all.
+          check_guid() {
+            local meta="$1.meta" want="$2" guid
+            [[ -f "$meta" ]] || return 0 # reported above
+            guid="$(awk '{ sub(/\r$/, "") } $1 == "guid:" { print $2; exit }' "$meta")"
+            if [[ "$guid" != "$want" ]]; then
+              problem "\`$meta\` has guid '$guid'; it must stay $want. Every free user's project points at that guid. Put the old .meta file back."
+            fi
+          }
+          check_guid Runtime/SFXSystem.Runtime.dll "$RUNTIME_DLL_GUID"
+          check_guid Editor/SFXSystem.Editor.dll "$EDITOR_DLL_GUID"
+
+          if (( ${#problems[@]} > 0 )); then
+            {
+              echo "## $TAG isn't ready to release"
+              echo
+              echo "Checked $SOURCE. Nothing was published."
+              echo
+              printf -- '- %s\n' "${problems[@]}"
+              echo
+              echo "See .github/RELEASING.md, \"When a check fails\"."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "${#problems[@]} problem(s) found. Nothing was published."
+            exit 1
+          fi
+          echo "All checks passed for $SOURCE."
+
+      - name: Write the release notes
+        run: |
+          notes="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "Install in Unity: **Window → Package Manager → + → Install package from git URL**, then paste:"
+            echo
+            echo '```'
+            echo "$INSTALL_URL#$TAG"
+            echo '```'
+            echo
+            cat "$RUNNER_TEMP/changelog-section.md"
+          } > "$notes"
+
+          chars="$(LC_ALL=C.UTF-8 wc -m < "$notes" | tr -d '[:space:]')"
+          if (( chars > NOTES_LIMIT )); then
+            echo "::error title=Notes too long::The notes for $TAG are $chars characters; GitHub allows $NOTES_LIMIT. Shorten the '## $VERSION' section of CHANGELOG.md."
+            exit 1
+          fi
+          {
+            echo "NOTES_FILE=$notes"
+            echo "NOTES_CHARS=$chars"
+          } >> "$GITHUB_ENV"
+
+          echo "::group::The release notes ($chars characters)"
+          cat "$notes"
+          echo "::endgroup::"
+
+      - name: Publish the GitHub Release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          title="Pepper.SFX $VERSION"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$title" --notes-file "$NOTES_FILE" \
+              --prerelease="$PRERELEASE" --latest="$LATEST" --draft=false
+            done_what="Updated"
+          else
+            gh release create "$TAG" --verify-tag --title "$title" --notes-file "$NOTES_FILE" \
+              --prerelease="$PRERELEASE" --latest="$LATEST"
+            done_what="Published"
+          fi
+          url="$(gh release view "$TAG" --json url --jq .url)"
+          echo "$done_what the Release: $url"
+          {
+            echo "RELEASE_DONE=$done_what"
+            echo "RELEASE_URL=$url"
+          } >> "$GITHUB_ENV"
+
+      - name: Show the release on the run's page
+        run: |
+          yes_no() { if [[ "$1" == true ]]; then echo yes; else echo no; fi; }
+          {
+            if [[ "$DRY_RUN" == true ]]; then
+              echo "## Dry run for $TAG: all checks passed, nothing was published"
+            else
+              echo "## $RELEASE_DONE Pepper.SFX $VERSION"
+              echo
+              echo "$RELEASE_URL"
+            fi
+            echo
+            echo "Checked $SOURCE."
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Title | Pepper.SFX $VERSION |"
+            echo "| Tag | $TAG |"
+            echo "| Pre-release | $(yes_no "$PRERELEASE") |"
+            echo "| Marked Latest | $(yes_no "$LATEST") |"
+            echo "| Notes | $NOTES_CHARS characters (GitHub allows $NOTES_LIMIT) |"
+            echo
+            echo "### The notes"
+            echo
+            echo "---"
+            echo
+            cat "$NOTES_FILE"
+          } >> "$GITHUB_STEP_SUMMARY"
