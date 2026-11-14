@@ -1,2 +1,79 @@
-All rights reserved.
-Do not distribute or modify without written permission.
+Pepper.SFX Free License
+Version 1.0, 14 November 2026
+
+Copyright (c) 2025-2026 Amir Pepper. All rights reserved, except as
+granted below.
+
+"The Package" means the free version of Pepper.SFX, as published at
+https://github.com/IamAmirPepper/Pepper.SFX_System: its compiled libraries,
+native plugin, icons, guides and every other file in it. The full version sold
+on the Unity Asset Store is not covered by this license; the Unity Asset Store
+End User License Agreement covers it.
+
+1. What you may do
+
+   Free of charge, you may:
+
+   a. use the Package in any number of Unity projects, on your own or as part
+      of a team or company of any size;
+
+   b. include the Package in games and other applications you build with
+      Unity, and sell or give away those builds, with no royalties and no
+      revenue limit;
+
+   c. keep the Package inside your project's files when you share the project
+      with your team, publisher or contractors, or with the public (for
+      example an open-source game or a game jam entry), as long as this
+      license stays with it and the Package isn't offered as a product of its
+      own.
+
+   Forking the repository on GitHub, as GitHub's own terms allow, is fine.
+
+2. What you may not do
+
+   You may not:
+
+   a. sell, sublicense or redistribute the Package on its own, or as part of a
+      tool, template, asset or package made for other developers (for example
+      on the Unity Asset Store or any other marketplace);
+
+   b. decompile, disassemble or reverse engineer the Package's libraries to
+      copy, change or republish their code, except where the law allows it
+      whatever this license says;
+
+   c. remove or change this license or any copyright notice in the Package;
+
+   d. use the name Pepper.SFX, or its logo, to suggest that its author
+      endorses you or your product.
+
+3. Credit
+
+   You don't have to credit Pepper.SFX. A line in your game's credits, such as
+   "Audio middleware: Pepper.SFX", is appreciated.
+
+4. Third-party code
+
+   The convolution reverb plugin contains code from the Unity Native Audio
+   Plugin SDK and from FFTConvolver, both under the MIT License. Their notices
+   are in "Third-Party Notices.txt". If your build includes the plugin,
+   include those notices with it too, for example in your credits or in a
+   text file next to the game.
+
+5. Other versions
+
+   A later version of the Package may come with a different license. The
+   license that came with your copy is the one that applies to that copy.
+
+6. If you break these terms
+
+   Your rights under this license end automatically if you break any of its
+   terms.
+
+7. No warranty
+
+   THE PACKAGE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE PACKAGE OR THE USE OR OTHER DEALINGS IN THE PACKAGE.

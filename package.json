@@ -1,8 +1,9 @@
 {
   "name": "com.pepper.sfx",
   "displayName": "Pepper's SFX System",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "unity": "6000.0",
+  "unityRelease": "48f1",
   "description": "Audio middleware for Unity — events, containers, hierarchical buses, mixer-slot occlusion, per-zone reverb, and portal-driven propagation.",
   "author": {
     "name": "Amir",

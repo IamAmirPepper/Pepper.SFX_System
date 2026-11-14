@@ -1,91 +1,176 @@
 # Changelog
 
-## [3.0.0] - 2026-07
+All notable changes to `com.pepper.sfx`. Versions follow semantic versioning; `-dev.N` versions are snapshots for testing in other projects before a release.
 
-The free/full split release. This package is now the **free version** — the complete
-single-player audio middleware. A **full version** (multiplayer audio, Addressables-based
-zone streaming, pro mixer/profiler tooling, full source code, and a one-click upgrade
-migration tool) is coming to the Unity Asset Store. Everything you author in the free
-version carries over.
+## 3.1.0 (14 November 2026)
 
-### Added
-- **Audio Explorer** (`Window ▸ Audio System ▸ Audio Explorer`) — browse every event,
-  container and bus in one window, with inline inspector and play-to-preview.
-- **Import Manager** (`Window ▸ Audio System ▸ Import Manager`) — category-driven import
-  pipeline; correct Load Type / compression applied automatically per category
-  (SFX / Music / UI / Dialogue / Ambience), with project-window icon overlays.
-- **Voice Pool Debug** (`Window ▸ Audio System ▸ Voice Pool Debug`) — live table of every
-  playing voice (clip, event, bus, volume, distance) with per-voice stop, pool health
-  bars, and a "voices lost to destruction" diagnostic.
-- **Audio Event IDs** (`Window ▸ Audio System ▸ Audio Event IDs`) — gives every event a
-  permanent, rename-proof stable ID and flags collisions; IDs are captured automatically
-  on import from here on.
-- **Container Validator** (`Window ▸ Audio System ▸ Container Validator`) — scans all
-  containers for common authoring mistakes with one-click fixes.
-- **Clip warming** — `AudioManager.WarmClip / WarmClips / WarmContainer` pre-load a clip's
-  audio data ahead of first play (kills the first-play hitch on streamed music and
-  compressed dialogue). `AmbientSource` warms its loop clip automatically on register.
-- **Voice pool health surface** — `AudioManager.GetStatistics()` now reports live voice
-  objects vs budget and a running voices-lost-to-destruction count; the AudioManager
-  inspector shows a live health card during Play, with an opt-out warning
-  (`warnOnActiveVoiceDestroyed`) naming the emitter-destroyed-mid-sound cause.
+The free version 3.1.0 came out on this date. The full version follows on the Unity Asset Store.
+
+Snapshots before it: `3.1.0-dev.1`, `3.1.0-dev.2`, `3.1.0-dev.3`, `3.1.0-dev.4` (scoped parameters to the audition), `3.1.0-dev.5` (lifecycle, teardown, pause), `3.1.0-dev.6` (authoring tools and docs), `3.1.0-dev.7` (routing, mix, positions), `3.1.0-dev.8` (many cars, split screen), `3.1.0-dev.9` (fixes from a review against a racing game), `3.1.0-dev.10` (engine-tool fixes; engines generated live on Unity 6.3), `3.1.0-dev.11` (Engine Grains for sweeps that rise evenly in pitch), `3.1.0-dev.12` (the generated engines' jitter). The behaviour changes below are also listed, with advice, in `Guides/BETA_KNOWN_ISSUES.md` under "Changes since 3.0.0".
 
 ### Changed
-- **AudioEvent inspector is registry-aware.** With an `AudioEventRegistry` in the project
-  it validates registry membership (with an *Add to Registry* button) instead of pushing
-  assets into `Resources/`. Legacy Resources-folder guidance now applies only to projects
-  without a registry.
-- **Cooldown rejections no longer log a warning** — being rate-limited is the feature
-  working; at footstep rates the old warning flooded the console. The call still returns
-  an empty handle.
-- Voice stealing (`maxInstances` overflow) is now allocation-free — noticeably cheaper
-  under rapid-fire instance-capped events.
-- Runtime state (cooldown clocks, random anti-repeat history, sequence positions) resets
-  cleanly per play session when Enter Play Mode Options skip domain reload.
-- Reverb diagnostics moved under `Tools ▸ Audio System ▸ Diagnostics ▸ …`.
+- **Pitch on handles.** `SetPitch` and `SetVoicePitch` are obsolete. They still replace the container's pitch randomization, now under the name `SetPitchAbsolute`. Use `SetPitchOffset` to shift on top of it.
+- **Volume on handles.** `SetVolume` and `SetVoiceVolume` still work but are obsolete. Use `SetVolumeScale` (relative to the authored volume) or `SetVolumeAbsolute`; per emitter, `SetVoiceVolumeScale`.
+- **Blend Containers.** Posting a Blend Container event again plays a second copy alongside the first. For a restart instead, set the event's Max Instances to 1.
+- **Reverse sequences** start from the last clip.
+- **Multi-position handles.** The per-emitter methods (`SetVoiceVolumeScale`, `StopVoice` and the others) take the emitter number, not a voice number.
+- **Multi-position posts with a source GameObject** play each 3D voice at its own position, attached to the source. Before, every voice played from the source itself.
+- **Equal Power crossfades** fade the outgoing sound out along a true equal-power curve, so loudness stays steady. The old sound is now noticeably louder through the middle of the fade. Linear crossfades are unchanged.
+- **CrossFade actions** with a Target Bus route the incoming sound through that bus (volume, mute, ducking). They place a 3D sound at the position or GameObject passed to Post instead of the world origin. A crossfaded-in Sequence's later clips get the Target Bus too.
+- **Delayed actions** that aren't a Play (CrossFade, Stop, SetState, SetRTPC, SetSwitch, ducking, Pause, Resume) now run even when nothing from that post is still playing. Only stopping the post's handle cancels them.
+- **Fade Duration on Play actions** was never used; Sound Builder (Simple) no longer shows it for Play.
+- **LOD Distances** on the Audio Manager are hidden. They never did anything.
+- **Blend Containers** follow their parameter once a frame, after every LateUpdate and before the audio is mixed, instead of inside `SetRTPC`. Still the same frame. Each play reads its own value (see Added). `BlendContainer.UpdateBlend` is obsolete; it sets the parameter's global value.
+- **Nested Blend Containers** multiply their curves instead of the last-changed one winning, and each reads its parameter in the same play's scopes (handle, emitter, global), also under a Switch.
+- **Later clips inside a Blend or Switch** (an auto-advancing Sequence's next clip) get the Blend's curve and the Blend's and Switch's Volume, like the first clip. They used to start at full level.
+- **`TransitionRTPC`** replaces a transition already running on the same name, and `SetRTPC` ends one. They used to run together and fight.
+- **With no listening point registered,** Pepper logs a warning once ("No listening point is registered") and searches the scene for an AudioListener at most once a frame while there is none; it used to search on every lookup.
+- **`myEvent.Post(null)`** with a bare `null` is now ambiguous (it also matches `Post(AudioEmitter)`). Write `myEvent.Post()`.
+- **Virtual voices** keep their place in the clip in samples, moved on every frame by the audio clock × the voice's pitch, so they come back in phase at any pitch (they used to follow real seconds, off by the pitch). They fade out over about 25 ms (at least three frames) before pausing and fade back in, instead of cutting; for those frames Unity plays one voice more than Max Real Voices. A virtual one-shot ends when its clip would have at its pitch. Positions no longer depend on LOD being on, and `AudioHandle.SeekTo` on a virtual voice is kept for its return.
 
-### Fixed
-- A voice whose emitter GameObject was destroyed mid-play no longer silently shrinks the
-  pool unnoticed — it is swept, counted, and (optionally) warned about.
-- Handle volume semantics documented: `AudioHandle.SetVolume` sets an **absolute** level
-  (replaces the authored base volume) — see the API reference.
+- **The voice pool works in whole plays.** A steal ends a whole play (all of a Blend's layers, all of a Routing container's clips), never one voice of it. An event makes room for its whole play before playing it, silent virtual plays first, then the least important; if it can't, nothing is stolen and the play is skipped with a warning (it used to steal and then drop). The real-voice cap is checked when a play has started, the new play included, so a less important new sound can start virtual; the voice pass ranks whole plays, a real one counting 1.25 times and each staying at least 0.5 s in a state, so an important virtual sound now takes the place of a less important real one when the real voices are full. A play bigger than the cap keeps its most important voices real.
+- **All voices of a play start on one DSP time**: one buffer ahead for a single voice, as before, two for a play of several voices, or the post's explicit time. Multi-position and explicit-time posts no longer restart their voices after starting them.
+- **`BlendContainer.Loop`** is obsolete and still not read; **Loop Mode** replaces it. Sound Builder (Simple) writes Loop Mode instead.
+- **`AudioVoice.MakeVirtual()` from your code** holds the voice virtual until `MakeReal()`; the voice budget no longer brings it back by itself.
+- **A voice reused from the pool** starts at High priority, as a new voice does, instead of keeping the last sound's (affects containers played directly from code).
+- **A post with no Audio Manager** returns at once with a warning (once per event) and no longer uses up the event's cooldown.
+- **The ambient system** (zones, portals, ambient sources) listens from the listening point registered with Pepper; it only searches for an AudioListener, then `Camera.main`, when none is registered. Its Listener Override still comes first.
+- **`SetSwitch`, `GetSwitch` and `ClearSwitch` on the Audio Manager** take a group name or a Switch Group asset, so a bare `null` group is ambiguous (CS0121). Pass a name or an asset.
+- **Random numbers.** Random containers, a Sequence's random order, volume and pitch randomization and multi-position offsets draw from Pepper's own random numbers instead of `UnityEngine.Random`: each Audio Emitter has its own sequence, other sounds share one. Audio no longer moves gameplay's random sequence, and the same Unity seed no longer gives the same audio picks. The Audio Manager's **Random Numbers** setting (Unity) restores the old behaviour. Networked posts are unchanged: their shared seed still decides the pick on every machine.
+- **A Random container's Avoid Repeat Last** is remembered per Audio Emitter: a car never repeats its own last clips, whatever other cars played. Posts without an emitter share one memory, as before.
+- **`AudioContainer.MaxDistance = x`** changes the running game only (a runtime override); it used to write the asset, so in the editor the Play-mode value stayed after Play.
+- **Emitters and listening points** measure their velocity at the start of Pepper's per-frame step instead of the end, so sounds read this frame's velocities. `DriveUnityListener` still moves the listener in the same step.
+- **The voices' root, "AudioVoices", is a root object of its own** instead of a child of the Audio Manager, and runs every coroutine Pepper starts. Switching the Audio Manager's GameObject (or a parent) off no longer stops anything: before, it ended the background work for good, left fades half done and stopped the 2D voices. To silence the game use `PauseAll`, a bus `Pause` or `StopAllSounds`. A coroutine returned by `WarmClip` runs on that root, so the manager's `StopCoroutine` can't stop it.
+- **A voice stopped while its object is being switched off** (a car's own script stopping its sound in `OnDisable`) goes back to the pool on Pepper's next step. Before, Unity refused to move it with an error and it stayed under the switched-off object.
+- **The "was skipped" warning** for a sound the pool couldn't make room for shows at most every 5 s, with a count of the others skipped since.
+- **Finished handles** ignore new `OnStarted`, `OnStopping` and `OnLoop` subscriptions (they could never fire). `OnFinished` still runs at once.
+- **The Container Validator** checks every event as well as every container, with new Blend, Routing and event rules (see Added). It no longer reports "No mixer group" on every container, Blend layers included; a Play action with neither a Target Bus nor a Mixer Group is what it warns about now.
+- **The event Inspector** no longer calls an event outside the registry an error that "will NOT load at runtime", and nothing is logged on import: an event held in a field plays wherever it is. It says that posting by name or id needs the registry.
+- **No Audio Import Settings asset ships in the package** (an installed package is read-only, so it couldn't be saved). Make one in your project to change the presets; without one the code defaults apply, which now match the asset that shipped (UI clips aren't normalized). With several in the project, the first by path is used and the Console says which, instead of a dialog.
+- **Bus faders, mute and solo** in the Mixer and Audio Profiler windows are recorded for Undo and saved with the project, in Play mode too (a mix set in Play mode used to be saved or lost by chance).
+- **Audio Profiler:** Voice Usage is real voices against Max Real Voices (it read 50% at the cap). **Voice Pool Debug:** the pool's objects against its whole size (Real + Virtual + Steal Headroom), the real and virtual tables scroll apart, and "Why virtual" gives the real reason (it said "over the cap" for voices past Max Distance, held by code, or on a paused bus or emitter).
+- **The Audition's sliders** stop only their own parameter's sweep (any slider stopped the sweep) and show the value written, including where a sweep ended.
+- **A handle's `SetVolumeScale` and `SetPitchOffset`** reach the voices its sound starts later too (a Switch's new choice, a Sequence's next clip, a delayed Play action), not only those playing when called. The absolute setters still reach only the voices playing now.
+- **Ducks combine by the deepest.** Each trigger is a duck of its own and the bus follows the deepest at each moment, so a short or shallow duck no longer cuts a long or deep one short (the last trigger used to replace the duck in progress). A new duck starts from the level the bus is at, so re-triggering one sounds as before.
+- **`SetBusVolume` with a name no bus has** changes nothing and warns once per name (it set the master bus). `GetBus` with one still returns the master bus, now with a warning once per name.
 
-### Notes
-- No public API was removed or changed — existing `PostEvent` code compiles and behaves
-  as before.
-- After updating: refresh Package Manager (or delete `Library/PackageCache/com.pepper.sfx@*`)
-  to pull the new commit.
+- **Low priority weighs 1/8** in a voice's importance (it weighed 0, so a Low sound always went first, however near and loud); Medium 1/4, High 1/2 and Critical 1 are as before.
+- **Steals fade out** over the Audio Manager's new **Steal Fade Seconds** (0.025 s, at least three frames) instead of cutting: pool steals, an event's Max Instances steal (which stopped its play on the spot) and a Switch's Restart. 0 brings back the cut. A sound stolen before it has started frees its voice at once, and making room counts it.
+- **A listening point whose followed transform is destroyed is removed,** with one warning a session; it used to stay where the camera was, still in use.
+- **A listening point following another transform** restarts its velocity measurement, so a camera change isn't read as speed.
+- **Every pooled voice carries its low- and high-pass filters from the start,** switched off, instead of getting them mid-game the first time a filter curve needed them.
 
-## [2.5.3] - 2026-06-05
-
-### Fixed
-- **Player builds no longer fail with ILLink error IL1010** ("Assembly 'Assembly-CSharp'
-  cannot be loaded ... Failed to resolve assembly: 'UnityEditor.CoreModule'"). The Runtime
-  assembly (`SFXSystem.Runtime`) was carrying a hard reference to `UnityEditor.CoreModule`
-  because editor-only API was named directly inside `#if UNITY_EDITOR` blocks. Since the
-  shipped Runtime DLL is precompiled in an editor context, those blocks — and the
-  UnityEditor dependency — were baked into the DLL and survived into player builds.
-  All `UnityEditor.*` references have been removed from the Runtime assembly.
-
-### Changed
-- Editor-only behaviors invoked from Runtime code (scene-view gizmo labels in
-  `PropagationManager`, `AudioMultiPositionEmitterParent`, `AudioMultiPositionEmitterChild`;
-  and `AudioEventRegistry`'s asset-locate / auto-populate / validate utilities) now route
-  through a delegate bridge instead of calling `UnityEditor` directly. The Editor assembly
-  installs the implementations on load via `[InitializeOnLoad]`; in player builds the slots
-  stay null and the call sites are null-guarded no-ops. No behavioral change in the editor.
+- **A parameter value that isn't a number** (NaN, an infinity) is refused wherever it is written (emitter, handle, global, a ramp, `SetRTPC`, `PostValues`), with a warning once per parameter; sounds keep the last value and RTPC listeners aren't told. One used to stay until the value was snapped: smoothing never left it, a Regions Blend played every band at full level, and the pitch dropped to its floor.
+- **With Spatial Mode = Pepper, a 3D sound started in the 100 ms after the listening points change** is at its own level from its first frame. It used to glide there from silence (a fresh voice) or from full level (a reused one), so a far sound could play near full level for a moment.
+- **The Engine Builder** turns Unity's Normalize off on the clips it folds to mono, so the bands keep their recorded levels (Normalize, on by default, levelled each loop), and gives the engine event Priority High. Its dialog lists both.
+- **The Container Validator** checks clips inside nested Blends by what they play with: the outer Blend's 3D through Uses Parent Positioning, and its Virtualize. A stereo loop in an Engine Builder tree used to pass. Silence from the bottom of a Regions Blend's range (a skid at rest) is a note instead of a warning, here and in the Blend inspector.
+- **The Live View** offers a recording its emitter's destruction ended for Save or Discard (it was dropped), and its voice column (and the Audition's) is **Gain dB**, with a tooltip: Pepper's gain, not what is heard.
+- **Auto Layout** asks before putting the layers in a new order while a sound plays: sounds already playing keep the old order. **Apply to Existing Clips** asks first, naming the folder, the clip count and the settings.
+- **Addressables (full version): clips go to their bank's own group.** The Addressable Audio Authoring window and the Sound Builder's Addressables section used to put clips in the Default Group, which packs everything into one bundle: with every zone in it, leaving a zone freed nothing (measured in a test build). By default they now use `Audio <label>`, made on first use with one bundle per clip; new groups they make are one bundle per clip too. Both warn when the group you pick packs another bank's clips into the same bundle.
 
 ### Added
-- `AudioSystem.AudioEditorHooks` — Runtime delegate bridge for editor-only behaviors.
-- `AudioEventRegistry.AutoLoadFromResources`, `ClearEntries()`, `RemoveNullEntries()` —
-  editor-symbol-free helpers backing the registry's authoring utilities.
+- **`Third-Party Notices.txt`** at the package's root: the MIT License notices for the code the convolution reverb plugin is built from (Unity's Native Audio Plugin SDK and FFTConvolver). A game whose build includes the plugin should include them too, in its credits or a text file.
+- **Icons** for the Parameter, Switch Group and Attenuation assets and the Audio Emitter, which showed Unity's default script icon, and for Audio Zone, Audio Portal, Ambient Source, Audio Listener Zone Tracker, the Multi-Position Emitter Parent and Child, Zone Audio Bank (full version), Beat Scheduler and the Reverb Send Bus Registry, which shared a general-purpose one. The generated engines (full version, Unity 6000.3 and later) get theirs too: Granular Engine, Additive Engine, Grain Table.
+- **Addressable Audio Authoring, Groups tab (full version):** add AudioClips to a group (a clip added late, an ambience's loop clip), see which of a group's clips a container or an open scene's Ambient Source points at, remove single clips or all unused ones, and switch a group that packs several banks into one bundle to one bundle per clip. It also flags a group Addressables leaves out of builds (a blank group, or Include in Build off), whose clips would play in the editor and be missing from a build, and can include it; the Convert tab and the Sound Builder warn about such a group too. The Convert tab offers the group and label of the selected containers' Addressable clips, so a clip added to a container later joins them. Manual §16.6.
+- **Generators (Unity 6000.3 and later; since `3.1.0-dev.10`):** `AudioSystem.Generators.GeneratorContainer`, a container whose sound is computed while it plays (a Unity 6.3 audio generator) on Pepper's pooled voices, with buses, panning, pause, virtual voices and Blend nesting; each voice is sent its parameters every step, read in its own play (`GeneratorValues`, `IGeneratorRealtime`, `GeneratorControl<T>`). The groundwork for the granular engine. **Engine Grains** (Window > Audio System > Engine Grains) cuts an engine sweep into a `GrainTable`, one engine cycle per grain, its RPM typed or measured from the pitch, with a report and a grain preview. **`GranularEngine`** (Create > Audio System > Granular Engine) plays an engine from an on-load and an off-load Grain Table blended by load, with an idle loop below them: the grain nearest the RPM, varied among its neighbours, resampled to the RPM, joined in phase. **`AdditiveEngine`** (Create > Audio System > Additive Engine) adds an engine's firing orders as sine tones with a little noise, each order's level moving with load, as a layer for weight under a loop or granular engine. Generator containers play in the **Audition** outside Play mode with sliders for their parameters, the **Container Validator** checks them, the debug windows name their voices "(generated)", and **`GeneratorCost`** measures their cost in a build. Manual §4.7 and §10.10. In the `SFXSystem.Generators` assemblies, which don't compile on earlier Unity versions.
+- **Split screen: Spatial Mode** on the Audio Manager (`AudioSpatialMode`): Unity (the default, as before) or **Pepper**, which pans and attenuates 3D sounds itself from every listening point by its **Weight** and **Pan Width** (`GainStack.SpatialGain`, `panStereo`), the way Unity's 3D does at one point. Each sound is measured from the point that hears it loudest (Doppler, attenuation filters, occlusion, the Furthest steal), gliding over 100 ms when that changes. **The primary point**: `AudioManager.SetPrimaryListeningPoint` / `PrimaryListeningPoint`, `AudioListeningPoint.IsPrimary`.
+- **A bus's voice cap**: `AudioBus.MaxRealVoices` (0 = none) and `RealVoiceCount`; over it, the least important of its sounds go virtual.
+- **The Live View** shows each voice's listening point, and with Spatial Mode = Pepper its level and pan (`AudioVoiceDebugInfo.listeningPoint`, `pepperPanned`, `spatialGainDb`, `pan`).
+- **Level and pitch per Audio Emitter**: **Volume Offset** (dB) and **Pitch Offset** (cents), on every sound posted on it, now and later (`GainStack.EmitterGain`, `PitchStack.Emitter`). `AudioHandle.SetVolumeOffset` (dB); `PostValues.WithVolumeOffset` / `WithPitchOffset` set a sound's offsets at the post.
+- **Posting anywhere on an Audio Emitter**: `emitter.Post(evt, localOffset, values)` (also `AudioEvent.PostAtOffset`, `AudioManager.Post(evt, emitter, localOffset, values)`), with the emitter's values, limits and random numbers. **Moving a playing sound**: `AudioHandle.SetLocalOffset` / `SetWorldPosition`; voices it starts later start there.
+- **Timed posts**: `Post(emitter, startDsp, startOffsetSeconds, values)` (event, emitter, manager; and at a world position on the event): that point of the sound is heard at that DSP time, catching up if the time has passed. `AudioEvent.EstimateDuration(values)` returns an `AudioDuration` (shortest, longest, loops) before posting.
+- **Pepper's Doppler**: a container's **Doppler** (Unity, the default, or Pepper) with **Doppler Exaggeration** and **Doppler Max Cents**: c ÷ (c − v) from each sound's closing speed, in the pitch stack (applied after the Pitch Limit), kept by virtual voices. `DopplerMode`, `DopplerMath`. `AudioEmitter.Teleport()` and `AudioListeningPoint.ClearVelocity()` so a reset or a camera cut isn't read as speed. The Container Validator doesn't flag Pepper's Doppler on Virtualize layers.
+- **Offset states**: a state's **Bus Volume Mode** (Set Level, the default and as before, or **Offset**: moves its buses by that many dB and puts them back when the state ends); `AudioManager.ClearState(group)`; `AudioBus.StateOffsetDb`.
+- **The player's volume**: `AudioBus.PlayerVolumeDb`, a Settings page's level on top of the mix, runtime only (never saved, never undone by a state); `AudioBus.IsMuted`; `AudioManager.MasterVolumeDb` / `SetMasterVolumeDb` and `IsAllMuted`. Example 08 sets player volumes.
+- **Live View** (Window > Audio System > Live View, Play mode): every Audio Emitter's values (written and heard) and switches, and each sound on it with its own values and each voice's level, pitch, Regions region and why it is virtual. Behind it: `AudioManager.GetPlaysDebug`, `AudioPlayDebugInfo`, `VoiceVirtualReason`, new `AudioVoiceDebugInfo` fields, `AudioHandle.ParameterCount` and the listing beside it, `AudioEmitter.AllEnabled`.
+- **Recording a drive:** the Live View records one emitter's values (`AudioEmitterRecorder`) into an `AudioParameterRecording` asset; the Audition replays it, looping or scrubbing, through each parameter's smoothing.
+- **The Audition plays events** (their Play actions through their Target Bus, with priority, Persistent and Delays), runs **several sweeps at once** (Once, Repeat, Back And Forth: `SweepMode`), gives Bypass While parameters sliders, and picks up a curve added while it plays.
+- **Loop Analysis** (Window > Audio System > Loop Analysis): a loop's fundamental and Root Value for a cylinder count, a seam check and preview, RMS, peak and LUFS. **Detect Root Values** on a Regions Blend.
+- **Engine Builder** (Window > Audio System > Engine Builder; full version only): selected loops become an engine's whole tree (on-load and off-load Regions Blends on RPM under a load Blend, one Persistent event).
+- **Container Validator rules:** Routing containers with no clip; Regions gaps, dips and empty regions; a Root Value of 0 under Pitch Follow; pitch past the Tuning Warning (with the follow parameter's own range and pitch curves; the Blend inspector's check uses the same, and lists gaps and empty regions); Doppler on loops in a Virtualize Blend; stereo clips on 3D layers and streamed ones on layers that go virtual; Play actions with no Target Bus; looping events that aren't Persistent; Attenuation assets in the 3D check.
+- **Folder Rules** in Audio Import Settings: a named set of import settings for a folder, applied to clips first imported there; **Apply to Existing Clips** on demand.
+- `AudioStatistics.poolSize`.
+- **Persist Across Scenes** on the Audio Manager (on by default, as before). Off: no `DontDestroyOnLoad`, so the manager can sit under another object; it belongs to its scene, and a second manager removes only its own component. On: a second manager removes its whole GameObject, as before.
+- **`AudioManager.Inert`** for dedicated servers: set at boot, it makes every post return one shared, finished handle without allocating or logging (with or without an Audio Manager), and an Audio Manager that starts builds no voices, coroutines or per-frame step. The ambient system doesn't create itself.
+- **On Disable on Audio Emitters** (`WhenDisabled`): Keep (the default, as before), **Stop** (switched off or destroyed, its sounds fade out over **Stop Fade Seconds** where they are, and go back to the pool) or **Pause** (switched off, they hold their place and carry on in phase when it is switched on). With Stop or Pause the sounds follow the object instead of being attached, so a fade can outlive it.
+- **Scope on Stop, Pause and Resume actions**: All (the default, as before) or **This Emitter**, so one car's post reaches only that car's sounds of the event.
+- **Pausing a bus**: `AudioBus.Pause()` / `Resume()` / `IsPaused`. Its sounds and its child buses' fade out, hold their place without a real voice, and come back in phase; sounds on other buses (a pause menu) play on. **While Paused**: Drop One-shots (the default) or Hold, for sounds posted while it is paused.
+- **Time on events and Ducking Time on buses** (`AudioTimeMode`: Scaled, the default, or Unscaled): an event's cooldowns, Delay actions, Sequence gaps and crossfades, and a bus's ducks, can run on real time, so a pause menu's sounds work at time scale 0.
+- **Scoped parameters.** `AudioParameter` assets (name, unit, range, default; values clamped when read), the `AudioEmitter` component, and per-play values on `AudioHandle`. A sound reads its play's value, else its emitter's, else the global value, else the default, so two cars can play one engine Blend at two RPMs. `AudioEvent.Post(AudioEmitter)`, `AudioManager.Post`, `SetParameter` / `ClearParameter` / `RampParameter` in every scope, `GetEffectiveParameter`. The string RTPC API is the global scope; a name and an asset with that name share one value. Blend Containers take a Parameter asset (curves in its unit) or a name (0–1, as before), with a "Create Parameter Asset From Name" button.
+- **Parameter smoothing.** A Parameter asset's Smoothing (None, Rate in units per second, or Ease in seconds to close 95% of the gap, each with separate rise and fall) makes sounds follow a written value gently, the same at any frame rate. Each scope smooths its own value; emitters and handles can override it (`SetSlewOverride`); `SnapParameter` / `SnapAllParameters` skip it for a reset; a "Bypass While" parameter turns it off (a rev limiter). Values set by name (`SetRTPC`) are never smoothed. Example 06 uses it instead of smoothing by hand.
+- **Parameter Curves** on every container and Blend layer: volume (dB), pitch (cents), low-pass and high-pass (Hz) against any parameter, read per play every frame. Filter curves add per-voice filters only where needed, eased and switched off when open; occlusion keeps its mixer slots.
+- **Blend Regions and Pitch Follow.** A Blend can lay its layers out in regions of the parameter (Auto Layout from each layer's Root Value) with Linear, Equal Power or S-Curve crossfades, and can pitch each layer by the parameter ÷ its Root Value so layers recorded at different RPMs stay in tune. The inspector shows a tuning check and warns about volume curves above 0 dB. Existing Blends keep their Volume Curves layout and don't follow pitch.
+- **Parent Settings** on every container: **Uses Parent Positioning** and **Uses Parent Output** let a container inside a Blend or Switch take its parent's 3D settings or Mixer Group, so they can be set once at the top. Off by default.
+- **Listening points.** `AudioManager.AddListeningPoint(transform)` (or a point moved with `SetPose`) tells Pepper where the game listens from; voice importance, occlusion rays, the Furthest steal and multi-position picks use it, and the scene is no longer searched. `DriveUnityListener` keeps Unity's AudioListener on the same spot. Weight and pan width are read with Spatial Mode = Pepper (3.1.0-dev.8, see Added). `ListenerUtil.Set` registers a point, so existing code keeps working.
+- **Named points on an Audio Emitter.** List an object's sound sources (a car's exhaust, intake, axles) as named offsets and post at them: `car.Post(exhaustEvent, "Exhaust")`, or by number (`FindPoint`). The sound is attached at the offset, so it moves and turns with the object, and reads the emitter's parameter values. An unknown name warns once and plays at the origin. `SetPoint` adds or moves one from code; the inspector lists them and the Scene view has a handle per point. Also `AudioEvent.Post(emitter, point)` and `AudioManager.Post(event, emitter, point)`.
+- **Emitter velocity.** `AudioEmitter.Velocity`, measured in Pepper's per-frame step, or given with `SetVelocity` (a rigidbody's) until `ClearVelocity`. Approach Speed and Pepper's Doppler read it.
+- **Switches per object and per sound.** Switch values follow the same three scopes as parameters: `emitter.SetSwitch(group, value)` (one car's surface) and `handle.SetSwitch(group, value)` (one axle) win over the global `AudioManager.SetSwitch`. **Switch Group assets** (Create > Audio System > Switch Group) list a group's values (Switch entries offer them in a dropdown, and a value not in the list warns once) and a Default Value; a name and an asset with that name are one switch, so string code keeps working. The Switch inspector has a "Create Switch Group Asset From Name" button.
+- **Switches that follow while playing.** A Switch Container's **When Switch Changes**: Next Play Only (the default, as before), **Crossfade** (the new choice fades in from its start as the old one fades out, over Crossfade Time, default 0.15 s, equal power; a flip back mid-fade brings the old one back up) or **Restart** (a click-free cut and a fresh start). Same handle throughout. `GainStack.SwitchGain` holds the crossfade.
+- **Attenuation assets** (Create > Audio System > Attenuation): how 3D sounds change with distance, shared between containers, as curves over metres: volume (dB), and optionally low-pass and high-pass (Hz) and spread (0 a point, 1 fully wide), with a Max Distance. Set one in a container's 3D Settings (it replaces Min/Max Distance and Rolloff; children take it with Uses Parent Positioning). Unity applies the volume and spread as its custom curves while mixing; Pepper sets the filters from each voice's distance every frame. Past Max Distance a sound plays virtually (with LOD on), back inside 95% of it. Importance follows the curve. `AudioHandle.SetAttenuation` / `ClearAttenuation` change one sound; `ContainerOverrides.attenuation`.
+- **Built-in values: Distance, Approach Speed, Angle.** A Parameter asset's new **Value From** makes it a value Pepper works out for each sound (metres to the listening point; closing speed in m/s, + coming closer; degrees around it, 0 ahead, + right). Use it in curves, Blends, Pitch Follow and Switch Group drivers like any parameter: a pass-by boost, a near/far crossfade, a whoosh dulled with distance. Code can't set it (one warning).
+- **Audition outside Play mode.** Window > Audio System > Audition plays the selected container tree while you edit it: a slider for every parameter it reads (through their smoothing), its switch values, a Sweep (RPM 900 → 7000 over 4 s, back and forth), Distance and Angle, and a live table of each layer's level, pitch, low-pass and real/virtual state. Heard 2D; a Sequence plays its first clip only. `AudioAudition` is the code behind it.
+- **One-shots per Audio Emitter.** Events get **Max Instances Per Emitter** and **Cooldown Per Emitter**, on top of the game-wide ones: at most 3 crackles per car, while another car's still play. At the limit, Steal Behavior picks which of that car's plays ends.
+- **Values at post.** `PostValues` carries a sound's own parameter and switch values with the post (`car.Post(impact, PostValues.Of(strength, 0.8f))`), set before its first voice starts so the first sample hears them. On `AudioEvent.Post`, `AudioEmitter.Post` and `AudioManager.Post`; no allocation.
+- **Random seeds per emitter.** `AudioEmitter.RandomSeed` / `SetRandomSeed`: the same seed replays a car's picks; `AudioManager.RandomNumbers` (Pepper or Unity).
+- **Parameter Curves on buses.** A bus's volume (dB) and low- and high-pass (Hz) can follow a parameter's global value: nitro sweeping the other cars' low-pass, a split mode taking a few dB off. Volume reaches every sound on the bus and its child buses (the bus's own Volume stays as authored); the filters drive a Lowpass/Highpass effect on the bus's Mixer Group, which the bus inspector's Add Low Pass / Add High Pass buttons create and expose.
+- **Switches driven by a parameter.** A Switch Group can take its value from a Parameter asset's ranges (slide speed: Grip, Slide, Skid), read per sound, with a Hysteresis so it doesn't flicker at a boundary. Values set directly on a driven group are ignored, with one warning.
+- **`SFXSYSTEM_DISABLE_NETCODE`**: add it to Scripting Define Symbols to leave every multiplayer assembly out of your project without deleting the folder.
+- **Update Mode** on the Audio Manager: Automatic (a step just before Unity mixes the audio, after every LateUpdate) or Manual (`AudioManager.Tick()`).
+- **Blend Loop Mode** (From Layers, the default and today's behaviour; Force Loop; Force One Shot) and **Silent Layers** (Keep Playing, the default; Virtualize, with a Silent Threshold of −60 dB and 6 dB of hysteresis): layers near silence go virtual, keep their place and come back in step, and are never stolen on their own. A nested Blend left at the defaults takes the outer one's.
+- **Persistent** on events: never stolen, can still go virtual; a warning when only persistent sounds are left. `AudioContainer.EstimateVoiceCount()`.
+- **Unity voice limits:** a startup warning when Max Real Voices exceeds Unity's real voice count or the whole pool exceeds Unity's virtual count, the numbers side by side in the Audio Manager inspector, and `AudioSource.priority` set from the event's priority (persistent highest). The Voice Pool Debug window shows each voice's play and why a virtual one is virtual.
+- **Doppler Level** on every container (3D Settings, default 1 = Unity's), passed down by Uses Parent Positioning; 0 keeps engine layers in step when they go virtual. Sound Builder (Simple)'s Doppler Level slider writes it. `AudioVoice.VirtualSamples`, `GainStack.RealizeGain` and `GainStack.GetGainWithoutRealize`.
+- **Pitch stack.** Each voice's pitch is now built from separate slots (container randomization, the Decorrelated nudge, the handle's offset, and slots reserved for planned features), the way volume already was. `AudioHandle.SetPitchOffset` / `SetPitchAbsolute` and the `AudioMultiHandle` equivalents. Containers get an optional **Pitch Limit** in semitones.
+- `AudioManager.CrossFade(handle, event, duration)`: crossfade from a sound you hold the handle of, also cancelling what it was still going to start (such as the loop of an intro + loop event).
+- Sound Builder (Simple) asks for the Fade From Container when making a Crossfade event.
+- This changelog and a package README.
 
-### Notes
-- The Editor assembly (`SFXSystem.Editor`) must be present in the editor for gizmo labels
-  and the registry inspector buttons to function — unchanged from prior versions, but now
-  a hard requirement for that editor-side functionality.
-- After updating: bump `package.json` to 2.5.3, push, then in consuming projects delete
-  `Library/PackageCache/com.pepper.sfx@<hash>/` or refresh Package Manager to pull the new commit.
-For questions or suggestions, see existing documentation
-"https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~"
-###
+### Removed
+- `ConvolutionReverbDevTester`, a temporary development harness. A scene that still has it shows a "missing script"; remove the component.
+- The Audio Import Settings asset under `Editor/AudioImport/Settings/` (see Changed).
+
+### Fixed
+- **Occlusion Layout window**, after `3.1.0-dev.12`: Scan, Auto-Create, Refresh only made slots for buses with a Use
+  Occlusion container, on the container's own Mixer Group. A bus whose sounds only used Allow Reverb Send or Use
+  Propagation got no slots, and a layer with Uses Parent Output had its slots looked for on its own Mixer Group while
+  it plays through its parent's. Those sounds played with no reverb send and no low-pass, without a warning. The scan now counts all three
+  options and the bus each sound really plays through. Run Scan, Auto-Create, Refresh again to add the missing slots.
+  When an Occlusion Layout is assigned and a sound still plays through a bus it has no slots for, the Audio Manager
+  now warns once per bus.
+- **Bus solo on nested buses**, after `3.1.0-dev.12`: soloing a bus whose parent wasn't soloed silenced it too, and
+  soloing a bus silenced its child buses. Solo now works as on a mixing desk: while any bus is soloed, the soloed buses
+  and their child buses are heard, through their parents (whose volume, mute and ducking still apply), and every other
+  bus is silenced, sounds posted straight to a parent included. Mute still wins.
+- **Mixer window meters** (full version), after `3.1.0-dev.12`: a bus's meter and spectrum showed only the sounds
+  whose Target Bus was that bus, so a parent such as Master, with its sounds on child buses, read silent while the mix
+  played. They now show everything the bus carries, its child buses' sounds included, as on a mixing desk
+  (`AudioBus.GetActiveSources(list, includeChildBuses)`).
+- **Granular Engine**, after `3.1.0-dev.11`: a held RPM warbled once an engine cycle (a jittery engine, worst at low
+  RPM). A sweep climbs through every grain, and each grain was played at one speed, so its pitch rose through it and
+  dropped back at the next: 3.8% at 1200 RPM on a sweep climbing 1000 RPM a second. Each grain is now played by the RPM
+  the sweep had at every sample, a line through its RPM at its middle at the pace its neighbours climb. The tables don't
+  need cutting again. And **the Granular and Additive Engines** moved to each frame's RPM and load across one audio
+  buffer and then held them, so a rev climbed in uneven steps (frames and buffers don't line up, and a long frame's
+  change came in one buffer). They now move over the time each frame took, at an even pace, about a frame and two
+  buffers behind. `GeneratorValues.Seconds`, and `GeneratorValues.Receive` with `out float seconds`.
+- **Engine Grains**, after `3.1.0-dev.10`: a typed RPM was always a straight line, so a sweep that rises evenly in pitch (as most synthesisers sweep) was cut where no cycle ends, its grains up to 60% off their true RPM. A typed RPM now has a **Curve**, Straight Line or **Even Pitch**; the sweep's own curve is measured from a harmonic followed through it and, when it disagrees with the one typed, offered with the two ranges that keep one typed end (the one whose trial cut matches better first). A cut moves at most 6% of a cycle, so it can't slip to a look-alike firing, and the report warns when many cuts found nothing like the cycle before. Grain tables made from such sweeps need analysing again. `GrainTable.Curve`, `GrainTable.RpmCurve`.
+- Engine tools, after `3.1.0-dev.9`: the **Engine Builder**'s one-clip loop containers have Avoid Repeat Last 0, and a Random container warns about Avoid Repeat Last only from two clips, saying what is true (at or above the clip count it does nothing; it used to say clips "may not play"). **Cylinders** is described as the scale from pitch to RPM it is, and the Engine Builder has its own (shared) slider, which re-scales the RPMs it detected. A reading more than half an octave from the RPM in its clip's name is flagged in Loop Analysis, the Engine Builder and Detect Root Values' log, and when most readings sit 2 semitones or more from their names (a V8 library read at 6 cylinders is 5 high), they name the cylinder count that fits. Built from one set of loops, the Engine Builder says the engine won't change with the throttle.
+- A voice made virtual by calling `MakeVirtual()` stayed counted as real, and a one-shot made virtual that way was never cleaned up.
+- In multiplayer, delayed Play actions and a Sequence's later clips (in Random order too) now pick the same variants on every machine; they drew unseeded random numbers.
+- The startup check against Unity's voice limits counts the ambient system's own sources.
+- `SwitchContainer.SetSwitch` did nothing until that container had played once; it now sets the group's global value straight away.
+- The editor's automatic mixer setup could leave a newly exposed parameter under Unity's own name instead of Pepper's when nothing had listed the mixer's exposed parameters first (Unity 6). It now always applies the name.
+- A Sequence's next clip in a sound that had gone virtual (far away, or less important) started real, and could push a more important sound virtual for half a second. It now starts virtual, like the rest of its sound.
+- The Audio Profiler's RTPC sliders use each Parameter asset's range and unit, and its RTPC and switch fields no longer risk an error when changed.
+- Many voice-pool, handle, pause, crossfade and loading fixes from the 2026-09 and 2026-10 reviews. Each is listed with the test that covers it in the dev repo's `docs/CODE_REVIEW_FIXLIST.md`.
+- Guides: corrected the engine recipe's pitch maths, ducking amounts (dB, not 0-1), the multi-position setup (there is no "Multi-Position Mode" checkbox), state transitions, the cooldown and singleton descriptions, and how voice stealing works.
+- A stray development settings file (`.claude/settings.local.json`) no longer ships in the package.
+- The Mixer strip's double-click on a fader now resets it to 0 dB (the first click swallowed it).
+- Guides, after `3.1.0-dev.12`, checked against the code: a fully blocked sound's occlusion cutoff is about 7 kHz, not 500 Hz; without an Occlusion Layout, Use Occlusion and Use Propagation still lower the volume (only the low-pass and the reverb sends need a slot); an ambient source can voice up to 6 paths (Max Paths Per Source), not only one; a new Reverb Send Bus's Room is 0 mB (audible), not −10000; a multi-position emitter's Use Directionality and Cone Angle only draw a gizmo; the emitter parent's field is Multi Position Type; BeatScheduler takes an Audio Event asset, not an event name; the settings-menu recipe sets the player's volume (`PlayerVolumeDb`), not the bus's Volume; buses do take Parameter Curves; Sound Builder (Simple) has no presets; Netcode for GameObjects 2.x has had light testing, not none; a delayed Play (the music intro → loop recipe) starts within about a frame of its time, not exactly on it, and the recipe now shows a sample-accurate join.
+- Guides (3.1.0-dev.6): Critical priority is the strongest weight, not "never stolen" (only Persistent is); the engine recipe sets the car's Audio Emitter to On Disable = Stop instead of an `OnDestroy` that couldn't stop the engine, ticks Is 3D on the Blend, and its real-RPM note matches its script; `SetBusVolume` and `GetBus` with an unknown name use the master bus, and handle offsets don't reach a playing Switch's new choice (both true at dev.6, both changed in dev.7: see Changed above); RTPC transitions replace each other; Pepper's per-frame step order.
+
+## 3.0.0 (July 2026)
+
+- New subsystem: Multiplayer (Netcode). Backend-agnostic networked audio with NGO 2.x and FishNet v4 adapters.
+- New subsystem: Audio Loading & Memory. Clip warming, the `IAudioClipSource` seam, and an optional Addressables backend.
+- No 2.5.0 APIs changed. See `Guides/API_REFERENCE.md` → Version History for details and older versions.

@@ -1,20 +1,17 @@
 # Pepper.SFX
 
-**Free audio middleware for Unity — events, containers, hierarchical buses, mixer-slot occlusion, per-zone reverb, and portal-driven propagation. A complete sound-design workflow, no license fee.**
+**Free audio middleware for Unity: events, containers, buses, states and parameters, a voice pool, split screen, occlusion, per-zone reverb and ambient propagation. Sound designers build sounds as assets; your code plays them with one call.**
 
-<!-- Optional: hero screenshot or short demo gif. The Quick Sound Setup Wizard
-     or a scene gizmo of zones/portals would both work well here. -->
+<!-- Optional: hero screenshot or short demo gif. Sound Builder (Simple), the Audition window
+     or a scene gizmo of zones/portals would all work well here. -->
 
-> ℹ️ **This is the free version** — the complete single-player audio middleware, shipped as compiled DLLs. A **full version** (multiplayer audio, zone-streamed memory via Addressables, extra pro tooling, and complete source code) is coming to the Unity Asset Store — with a one-click upgrade tool so nothing you build here goes to waste.
-
-
-
+> ℹ️ **This is the free version**: everything a single-player game needs, shipped as compiled DLLs. A **full version** is coming soon to the Unity Asset Store: it adds the C# source, multiplayer, Addressables loading, vehicle engines and more editor windows, and a free upgrade tool will move your project across without losing anything you built. See [peppersfx.com](https://peppersfx.com/get/).
 
 ## Why this exists
 
-Unity's built-in audio is fine for a "play a sound at a position" project. Real games need more: variations that don't sound repetitive, hierarchical volume control that scales to dozens of buses, reverb that changes per room, ambient sounds that route through doors and windows, and a workflow that lets sound designers iterate without touching code.
+Unity's built-in audio is fine for a "play a sound at a position" project. Real games need more: variations that don't sound repetitive, levels you can mix across dozens of buses, reverb that changes per room, ambient sounds that come through doors and windows, and a workflow that lets sound designers iterate without touching code.
 
-**Pepper's SFX System** is the layer between your game logic and Unity's audio API that makes those things easy. Sounds are played through **events**, organized through **containers**, mixed through **buses**, and (optionally) routed through a **zone/portal graph** for physically plausible propagation through geometry.
+**Pepper.SFX** is the layer between your game logic and Unity's audio that makes those things easy. Sounds are played through **events**, organized in **containers**, mixed through **buses**, shaped by **parameters** and **states**, and (optionally) routed through a **zone and portal graph** so they travel through your level's geometry.
 
 ### Before
 
@@ -48,91 +45,105 @@ void PlayFootstep()
 
 ## Highlights
 
-### 🎵 Core SFX
-- **Events + Containers** — Random (weighted, with repeat avoidance), Sequence (Forward / Reverse / PingPong / Random), Switch (state-driven selection), Blend (RTPC-driven crossfading), Routing (layered playback).
-- **Hierarchical Buses** — a tree of volume controls with auto-propagating parent volumes, mute/solo, ducking, and Unity AudioMixer integration.
-- **Click-free voice pool** — pooled, priority-driven voices with stealing, distance LOD, and virtualization. Voices start on DSP-buffer boundaries and never rebuild filters mid-play, so reuse is structurally click-free.
-- **States & RTPCs** — group-based state machines that drive bus volumes, switches, and effect parameters in one transition; real-time parameters with smooth transitions.
-- **Multi-position audio** — one sound playing from N places at once (a river, a long wall of rain), sample-accurately synced.
-- **Clip warming** — pre-load a clip's audio data ahead of first play (`WarmClip` / `WarmContainer`), so streamed music and compressed dialogue never hitch on their first note.
+### 🎵 Core
+- **Events and containers**: Random (weighted, avoids repeats), Sequence (Forward, Reverse, PingPong, Random), Switch (picked by a switch, or by a parameter's ranges), Blend (crossfades layers along a parameter, with regions and pitch that follows it) and Routing (layers that play together).
+- **Buses**: a tree of levels with mute, solo, pause and a voice cap per bus; ducks that combine (the deepest one wins); a bus's level and filters following a parameter; a player volume; Unity AudioMixer integration.
+- **Parameters and states**: Parameter assets with a range and smoothing, set for the whole game, per Audio Emitter or per sound; Distance, Approach Speed and Angle worked out for you; curves on every container, layer and bus; states that move buses, switches and parameters together.
+- **A voice pool for busy scenes**: priorities; stealing that ends a whole sound with a short fade instead of a click; virtual voices that keep their place and come back in step; Persistent sounds that are never stolen; limits and cooldowns per event and per emitter.
+- **Multi-position audio**: one sound playing from many places at once (a river, a row of speakers), in sync.
+- **Clip warming**: load a clip's audio data before its first play (`WarmClip` / `WarmContainer`), so streamed music and compressed dialogue don't hitch on their first note.
 
 ### 🌍 Spatial audio
-- **Ambient propagation** — a zone/portal graph routes long-running ambient beds (rain, wind, machinery) through real geometry. Rain heard *from the window* when you're in another room; doors that animate smoothly between muffled and clear.
-- **Per-zone reverb** — every acoustic space drives its own reverb character; SFX automatically send to the room they're fired in.
-- **Mixer-slot occlusion** — walls muffle sound without clicks or per-source filter hacks. Multi-ray sampling produces smooth gradients across wall edges instead of on/off steps.
-- **Soft zone boundaries** — reverb and volume fade smoothly across a zone's surface instead of switching at the border.
+- **Attenuation assets**: distance curves for level and filters, shared between sounds.
+- **Listening points and split screen**: several listeners at once. In Pepper's spatial mode, Pepper pans and fades each sound from all of them, with its own Doppler.
+- **Occlusion**: walls muffle sound through mixer slots, with no clicks and no per-source filter hacks. Several rays give smooth changes across a wall's edge instead of on/off steps.
+- **Per-zone reverb**: every space has its own reverb, and sounds send to the room they're played in. Convolution reverb too, on 64-bit Windows.
+- **Ambient propagation**: zones and portals route long ambient beds (rain, wind, machinery) through real geometry. Rain heard *from the window* when you're in another room; doors that move smoothly between muffled and clear.
+- **Soft zone boundaries**: reverb and level fade across a zone's edge instead of switching at it.
 
 ---
 
-## 🛠️ The editor windows — what each one does for you
+## 🛠️ The editor windows
 
 Everything lives under `Window ▸ Audio System`. In the order you'll likely meet them:
 
 | Window | What it does for you |
 |---|---|
-| **Quick Sound Setup Wizard** | Go from an audio file to a playable sound in one click — creates the bus, container and event and wires them together. The fastest way to get your first sound working (under 2 minutes). |
-| **Import Manager** | Drop audio files in, pick a category (SFX / Music / UI / Dialogue…), and the correct Unity import settings are applied automatically. No more per-file compression fiddling — and no accidentally streaming your footsteps. |
-| **Audio Explorer** | Every event, container and bus in one browsable window — click to inspect, press play to preview. No more hunting through project folders to find "that one footstep event". |
-| **Voice Pool Debug** | A live table of everything currently playing — which clip, which event, which bus, how loud, how far — with a one-click stop per voice. Your first stop whenever something *sounds* wrong. |
-| **Container Validator** | Scans every container for common authoring mistakes (missing clips, bad weights, broken references) and offers one-click fixes. Run it before a build, sleep better. |
-| **Occlusion Layout** | One-click setup for occlusion: scans your project and auto-builds the mixer plumbing that wall-muffling needs. Run it once, forget it exists. |
-| **Reverb Send Buses** | Create and manage per-room reverb from a single overview — generate, validate and apply each room's reverb bus without hand-editing the mixer. |
-| **Audio Event IDs** | A health-check for your events: gives each one a permanent, rename-proof ID and flags any duplicates. Keeps your project future-proof (these IDs are also what the full version's multiplayer uses on the wire). |
-| **Toggle Icon Overlays** | Puts little audio-type icons on your assets in the Project window, so events, containers and buses are recognizable at a glance. |
+| **Sound Builder (Simple)** | From audio files to a playable sound: creates the bus, container and event and wires them together. The fastest way to your first sound (it used to be the Quick Sound Setup Wizard). |
+| **Import Manager** | Pick a category (SFX, Music, UI, Dialogue…) and the right Unity import settings are applied. **Folder Rules** give every clip first imported into a folder that folder's settings, so nobody fiddles with compression per file. |
+| **Audio Explorer** | Every event, container and bus in one browsable window: click to inspect, press play to preview. |
+| **Audition** | Plays a sound or an event while you edit it, outside Play mode: a slider for every parameter it reads, its switch values, sweeps (RPM 900 → 7000 over 4 s), and each layer's level and pitch. Tune an engine by ear without driving the car. |
+| **Live View** | In Play mode, what every Audio Emitter is doing: its values, its sounds, each voice's level and pitch, and why a voice went virtual. Record one emitter, then replay it in the Audition to tune the mix on a real lap. |
+| **Voice Pool Debug** | A live table of everything playing, real and virtual, with why each virtual one is. Your first stop when something *sounds* wrong. |
+| **Container Validator** | Checks every container and event for authoring mistakes (empty or zero-weight entries, a Blend with silent gaps, a Play action with no bus) and fixes them, with Undo. Run it before a build. |
+| **Loop Analysis** | Measures a loop: whether it clicks where it goes round, the level across the seam, RMS, peak and loudness (LUFS), and an engine loop's pitch and RPM. |
+| **Occlusion Layout** | One-click setup for occlusion: builds the mixer slots that wall-muffling needs. Run it once, forget it exists. |
+| **Reverb Send Buses** | Create and manage per-room reverb from one overview, without hand-editing the mixer. |
+| **Audio Event IDs** | Gives each event a permanent, rename-proof ID and flags duplicates. |
+| **Toggle Icon Overlays** | Puts audio-type icons on your assets in the Project window. |
 
-Plus **custom inspectors with live diagnostics** on `AudioZone`, `AudioPortal`, `PropagationManager`, `ReverbSendBus`, and `AudioManager` (including a live voice-pool health readout while playing).
+Plus **custom inspectors with live diagnostics** on `AudioZone`, `AudioPortal`, `PropagationManager`, `ReverbSendBus` and `AudioManager` (including a live voice-pool readout while playing), and an icon for every asset and component.
 
 ---
 
 ## Documentation
 
-Full guides + API reference live in [`Documentation~/`](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~).
+Three guides come in [`Documentation~/`](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~), and the same ones are online at [peppersfx.com/docs](https://peppersfx.com/docs/). Each says at its top which version it documents.
 
-- **[USER_GUIDE.md](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~/USER_GUIDE.md)** — Introduction → Quick Start → Cookbook → Manual → Migration. One file for everything narrative.
-  - **Quick Start** — first sound playing in 2–10 minutes
-  - **Cookbook** — copy-paste recipes for footsteps, UI sounds, weapons, music systems, ambient propagation, per-zone reverb, and debugging
-  - **Manual** — architecture and design rationale, every subsystem chapter-by-chapter
-- **[API_REFERENCE.md](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~/API_REFERENCE.md)** — every public type, method, property, and inspector field.
+- **[USER_GUIDE.md](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~/USER_GUIDE.md)**: Introduction, Quick Start, Cookbook, Manual, Migration and Build Compatibility.
+  - **Quick Start**: your first sound playing in a few minutes.
+  - **Cookbook**: recipes for footsteps, UI sounds, weapons, music, 3D audio, states and parameters, occlusion, per-zone reverb, ambient propagation and debugging.
+  - **Manual**: every subsystem, chapter by chapter.
+- **[API_REFERENCE.md](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~/API_REFERENCE.md)**: every public type, method, property and inspector field.
+- **[BETA_KNOWN_ISSUES.md](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~/BETA_KNOWN_ISSUES.md)**: what's known not to work yet, and what changed since 3.0.0.
 
 ---
 
 ## Install
 
-**Requirements**: Unity 6000.0 or later. Git installed (Unity Package Manager fetches from Git).
+**Requirements**: Unity 6000.0.48f1 or newer, and Git installed (Unity's Package Manager fetches the package from Git).
 
-1. **Window → Package Manager → + → Add package from git URL**
+1. **Window → Package Manager → + → Install package from git URL**
 2. Paste:
    ```
    https://github.com/IamAmirPepper/Pepper.SFX_System.git
    ```
-3. Done. The package appears under "Pepper's SFX System" in the manager.
+3. Done. The package appears as "Pepper's SFX System" in the Package Manager.
 
-To pin to a specific version, append `#v3.0.0` (or any tag/branch) to the URL.
+To install a particular version, add its tag to the URL, for example `https://github.com/IamAmirPepper/Pepper.SFX_System.git#v3.1.0`. Versions are tagged from 3.1.0 on.
+
+Then follow the Quick Start in the User Guide: add an Audio Manager to your scene and make your first sound with Sound Builder (Simple).
 
 ---
 
 ## Free vs Full
 
-| | **Free (this package)** | **Full (Asset Store, coming soon)** |
+| | **Free (this package)** | **Full (Unity Asset Store, coming soon)** |
 |---|---|---|
-| Events, containers, buses, states, RTPCs | ✅ | ✅ |
-| Voice pool, occlusion, per-zone reverb, propagation | ✅ | ✅ |
-| Authoring & debug windows (table above) | ✅ | ✅ + **Mixer**, **Audio Profiler**, **EQ Spectrum Visualizer**, **Loading Validator** |
-| **Multiplayer audio** (NGO / FishNet) | — | ✅ |
-| **Zone-streamed audio memory** (Addressables) | — | ✅ |
-| Source code | Compiled DLLs | ✅ Full source |
-| Upgrade path | — | ✅ One-click migration — everything you author in free carries over |
+| Events, containers, buses, states, parameters | ✅ | ✅ |
+| Voice pool, virtual voices, priorities | ✅ | ✅ |
+| Attenuation, listening points, split screen, Doppler | ✅ | ✅ |
+| Occlusion, per-zone reverb, convolution reverb (64-bit Windows), ambient propagation | ✅ | ✅ |
+| Multi-position audio | ✅ | ✅ |
+| Editor windows (table above) | ✅ | ✅ + **Sound Builder (Advanced)**, **Mixer**, **Audio Profiler**, **EQ Spectrum Visualizer**, **Loading Validator**, **Addressable Audio Authoring** |
+| **Vehicle engines**: the Engine Builder, and engines generated live from a sweep (experimental, Unity 6000.3+) | — | ✅ |
+| **Multiplayer audio**: FishNet v4, and Netcode for GameObjects 2.x (lightly tested so far) | — | ✅ |
+| **Addressables loading**, with banks per zone | — | ✅ |
+| Source code | Compiled DLLs | ✅ Full C# source, and example scripts |
 
-Nothing you build in the free version is throwaway: the full version ships an upgrade tool that migrates your entire project's audio assets in a few minutes.
+**Moving to full.** Free and full can't sit in the same project, so when the full version is out, a free upgrade package will do the move: install it, remove free, import full, and run **Window ▸ Audio System ▸ Upgrade From Free**. It rewrites every script reference once, so nothing you build in free is lost.
 
 ---
 
-## What's new in 3.0.0
+## What's new in 3.1.0
 
-- 🛠️ **The editor suite grew** — Audio Explorer, Import Manager, Voice Pool Debug, Audio Event IDs, and Container Validator join the wizard and the spatial-authoring windows (see the table above).
-- 🔥 **Clip warming** — `WarmClip` / `WarmClips` / `WarmContainer` pre-load audio data on your schedule, killing first-play hitches for streamed music and compressed dialogue. Ambient sources warm themselves automatically.
-- 🔧 **Core runtime hardening** — live voice-pool health diagnostics (including a warning when an emitter is destroyed mid-sound), cleaner session resets, quieter logs, and faster voice stealing under load.
-- 📚 **Docs refreshed** throughout.
+- 🎮 **Split screen**: listening points, and a spatial mode where Pepper pans and fades sounds from several listeners itself, with its own Doppler.
+- 🎚️ **Parameters per object**: Parameter assets with smoothing, set for the whole game, per Audio Emitter or per sound; curves on every container, Blend layer and bus; Distance, Approach Speed and Angle built in; switches driven by a parameter; Blends laid out in regions.
+- 🔊 **Mixing**: ducks that combine, pausing a bus, a voice cap per bus, a player volume, and states that move buses by an offset.
+- 🧠 **A smarter voice pool**: whole sounds stolen with a short fade instead of a cut, virtual voices that come back in step at any pitch, limits and cooldowns per emitter, and Persistent events.
+- 🛠️ **New windows**: the Audition, the Live View with recording, and Loop Analysis. The Quick Sound Setup Wizard is now Sound Builder (Simple), and the Import Manager has Folder Rules.
+- 🖼️ **Icons** for every asset and component.
+- ⚠️ **Some behaviour changed since 3.0.0.** Each change, and what to do about it, is in [BETA_KNOWN_ISSUES.md](./Documentation~/BETA_KNOWN_ISSUES.md) under "Changes since 3.0.0".
 
 Full release notes: [CHANGELOG.md](./CHANGELOG.md).
 
@@ -147,14 +158,14 @@ Full release notes: [CHANGELOG.md](./CHANGELOG.md).
 ![Audio Event](image-2.png)
 
 ![Import Manager](image-3.png)
----
 
 ---
+
 ## License
 
-**Proprietary.** Free to use in your Unity projects. Do not redistribute or modify. See [LICENSE.txt](./LICENSE.txt).
+**Free for any game, commercial or not, with no royalties.** You can't resell or re-upload the package itself, or put it inside an asset made for other developers. See [LICENSE.txt](./LICENSE.txt). The convolution reverb plugin includes MIT-licensed code; its notices are in [Third-Party Notices.txt](./Third-Party%20Notices.txt).
 
-For licensing questions or commercial arrangements, contact the author below.
+For anything the license doesn't cover, contact the author below.
 
 ---
 
@@ -163,12 +174,13 @@ For licensing questions or commercial arrangements, contact the author below.
 **Amir Pepper**
 [amirpepper96@gmail.com](mailto:amirpepper96@gmail.com)
 [github.com/IamAmirPepper](https://github.com/IamAmirPepper)
+[peppersfx.com](https://peppersfx.com)
 
 
 ## Images
 
-[![Unity](https://img.shields.io/badge/Unity-6000.0+-black.svg?style=flat&logo=unity)](https://unity.com/)
+[![Unity](https://img.shields.io/badge/Unity-6000.0.48f1+-black.svg?style=flat&logo=unity)](https://unity.com/)
 [![Version](https://img.shields.io/github/package-json/v/IamAmirPepper/Pepper.SFX_System?label=version)](./package.json)
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](./LICENSE.txt)
+[![License](https://img.shields.io/badge/License-Free_for_games-brightgreen.svg)](./LICENSE.txt)
 [![Docs](https://img.shields.io/badge/docs-USER__GUIDE-blue.svg)](https://github.com/IamAmirPepper/Pepper.SFX_System/tree/main/Documentation~)
-
+[![Website](https://img.shields.io/badge/website-peppersfx.com-orange.svg)](https://peppersfx.com)
