@@ -1,5 +1,5 @@
 Pepper.SFX Free License
-Version 1.0, 14 November 2026
+Version 1.0, [date of release]
 
 Copyright (c) 2025-2026 Amir Pepper. All rights reserved, except as
 granted below.
