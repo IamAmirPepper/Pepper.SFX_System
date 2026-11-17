@@ -1,6 +1,6 @@
 # SFX System — User Guide
 
-**Version:** 3.1.0
+**Version:** 3.1.1
 **Unity Compatibility:** 6000.0.48f1 and above
 **Last Updated:** October 2026
 
@@ -59,6 +59,11 @@ void PlayFootstep()
 
 ## 2. Quick Start
 
+**The Welcome window** opens the first time you open a project with Pepper.SFX in it (and once after each update). Its
+**Add Audio Manager** and **Open Sound Builder (Simple)** buttons do Method 1's first two steps, and it shows the code
+for the third. Open it any time from `Window > PepperSFX > Setup > Welcome`; untick its "Show this window…" box if you
+don't want it to open by itself.
+
 ### Choose Your Path
 
 Pick the setup method that fits your workflow:
@@ -96,7 +101,7 @@ Pick the setup method that fits your workflow:
 3. Done! (Auto-configures itself)
 
 #### Step 2: Create Sound Assets (1 minute)
-1. In Unity menu: `Window > Audio System > Sound Builder (Simple)`
+1. In Unity menu: `Window > PepperSFX > Authoring > Sound Builder (Simple)`
 2. **Choose Creation Mode:**
    - **Complete Setup** - Creates Bus + Container + Event all at once (recommended)
    - **Container Only** - Just create a container
@@ -173,7 +178,7 @@ Occlusion is opted into per-container via the `Use Occlusion` toggle on AudioCon
 
 #### Step 2: Create Folder Structure (1 minute)
 
-Right-click in Project window → `Create > Audio System > Sound Builder (Simple)` → Click **"Auto-Create Standard Folder Structure"**
+Right-click in Project window → `Create > PepperSFX > Sound Builder (Simple)` → Click **"Auto-Create Standard Folder Structure"**
 
 Or manually create:
 
@@ -198,7 +203,7 @@ Assets/Audio/
 #### Step 3: Create Your First Bus (2 minutes)
 
 1. Right-click in `Assets/Audio/Buses/`
-2. Select `Create > Audio System > Audio Bus`
+2. Select `Create > PepperSFX > Buses > Audio Bus`
 3. Name the file: "SFX_Bus"
 4. Select it and configure in the Inspector:
    - **Bus Name:** "SFX"
@@ -215,7 +220,7 @@ Assets/Audio/
 #### Step 4: Create Your First Container (2 minutes)
 
 1. Right-click in `Assets/Audio/Containers/`
-2. Select `Create > Audio System > Routing Container`
+2. Select `Create > PepperSFX > Containers > Routing Container`
 3. Name it: "TestSound_RC"
 4. Select it and configure in the Inspector:
    - **Container Name:** "TestSound"
@@ -236,7 +241,7 @@ Assets/Audio/
 #### Step 5: Create Your First Event (2 minutes)
 
 1. Right-click in `Assets/Audio/Resources/Audio/Events/`
-2. Select `Create > Audio System > Audio Event`
+2. Select `Create > PepperSFX > Audio Event`
 3. Name it: "Play_TestSound"
 4. Select it and configure in the Inspector:
 
@@ -449,17 +454,17 @@ Propagation is **additive** — it doesn't touch the SFX event pipeline you just
 #### 2-Minute Setup
 
 ```
-1. Create empty GameObject → BoxCollider (isTrigger forced on) → Add "Audio/Propagation/Audio Zone"
+1. Create empty GameObject → BoxCollider (isTrigger forced on) → Add "PepperSFX/Propagation/Audio Zone"
    → Size collider to fit the room. Repeat for each acoustic space.
 
-2. Create empty GameObject at a doorway → BoxCollider → Add "Audio/Propagation/Audio Portal"
+2. Create empty GameObject at a doorway → BoxCollider → Add "PepperSFX/Propagation/Audio Portal"
    → Drag the two adjacent AudioZones into ZoneA and ZoneB.
 
-3. Create empty GameObject inside the source zone → Add "Audio/Propagation/Ambient Source"
+3. Create empty GameObject inside the source zone → Add "PepperSFX/Propagation/Ambient Source"
    → Assign Source Zone, Looping Clip, and Ambience Mixer Group.
 
 4. On your player object, the one with the Collider (e.g. the player root's Capsule Collider)
-   → Add "Audio/Propagation/Audio Listener Zone Tracker". Not on the camera that holds the
+   → Add "PepperSFX/Propagation/Audio Listener Zone Tracker". Not on the camera that holds the
    AudioListener: trigger events only reach a GameObject that has a Collider.
    (A kinematic Rigidbody is auto-added if needed for trigger events.)
 ```
@@ -524,7 +529,7 @@ This section is organized around tasks, not features. Each recipe walks one outc
 ##### Step 1: Create AudioManager (2 min)
 
 1. Create empty GameObject in scene: "AudioManager"
-2. Add component: `AudioManager` (Component → Audio System → Audio Manager)
+2. Add component: `AudioManager` (Add Component → PepperSFX → Audio Manager)
 3. Configure Inspector:
    - Master Volume: 1.0
    - Max Real Voices: 32
@@ -554,7 +559,7 @@ Assets/
 
 ##### Step 3: Create Master Bus (1 min)
 
-1. Right-click `Buses/` → Create → Audio System → Audio Bus
+1. Right-click `Buses/` → Create → PepperSFX → Buses → Audio Bus
 2. Name: "Master_Bus"
 3. Inspector:
    - Bus Name: "Master"
@@ -563,7 +568,7 @@ Assets/
 
 ##### Step 4: Create SFX Bus (1 min)
 
-1. Right-click `Buses/` → Create → Audio System → Audio Bus
+1. Right-click `Buses/` → Create → PepperSFX → Buses → Audio Bus
 2. Name: "SFX_Bus"
 3. Inspector:
    - Bus Name: "SFX"
@@ -572,7 +577,7 @@ Assets/
 
 ##### Step 5: Create First Container (2 min)
 
-1. Right-click `Containers/` → Create → Audio System → Routing Container
+1. Right-click `Containers/` → Create → PepperSFX → Containers → Routing Container
 2. Name: "Test_Click_RC"
 3. Inspector:
    - Container Name: "TestClick"
@@ -583,7 +588,7 @@ Assets/
 
 ##### Step 6: Create First Event (2 min)
 
-1. Right-click `Assets/Resources/Audio/Events/` → Create → Audio System → Audio Event
+1. Right-click `Assets/Resources/Audio/Events/` → Create → PepperSFX → Audio Event
 2. Name: "Play_TestClick"
 3. Inspector:
    - Event Name: "Play_TestClick"
@@ -2124,7 +2129,7 @@ public class UnderwaterVolume : MonoBehaviour
 - For a 3D engine, set **Doppler** to **Pepper** on the Blend (its 3D Settings; or Doppler Level 0 for none) and tick **Uses Parent Positioning** on each layer. Layers that go virtual then come back in step with the others; Unity's Doppler is the one pitch change Pepper can't follow (Manual §3.2, Voice Virtualization; §4.1 Doppler).
 
 **2. Create a Parameter:**
-- Parameter: "EngineRPM" (Create > Audio System > Parameter)
+- Parameter: "EngineRPM" (Create > PepperSFX > States and Parameters > Parameter)
 - Unit Label: "0-1", Min: 0, Max: 1, Default: 0.2 (idle)
 - Smoothing: Ease, Rise 0.3 s, Fall 0.5 s. The engine follows the car's speed gently, the same at any frame rate, so the script below doesn't smooth anything itself.
 
@@ -2156,7 +2161,7 @@ public class UnderwaterVolume : MonoBehaviour
 - Actions: Play Vehicle_Engine_BC → SFX_Bus
 - Persistent: ticked. The engine is never stolen to make room for other sounds (Manual §5.3).
 
-**5. On the car:** add an **Audio Emitter** component (Add Component > Audio System > Audio Emitter) next to the script below, and set its **On Disable** to **Stop**: when the car is destroyed or switched off, its engine fades out over **Stop Fade Seconds** where it is and its voices go back to the pool (Manual §3.4). Left at Keep, the engine's voices sit under the car and are cut with it.
+**5. On the car:** add an **Audio Emitter** component (Add Component > PepperSFX > Audio Emitter) next to the script below, and set its **On Disable** to **Stop**: when the car is destroyed or switched off, its engine fades out over **Stop Fade Seconds** where it is and its voices go back to the pool (Manual §3.4). Left at Keep, the engine's voices sit under the car and are cut with it.
 
 ##### Code
 
@@ -2252,7 +2257,7 @@ public class VehicleEngineAudio : MonoBehaviour
 
 > **Why no `OnDestroy`:** an earlier version posted a stop event there. A Stop action only stops its own event's sounds, so a separate stop event never reached the engine, and a `Stop(0.5f)` from `OnDestroy` can't fade voices that are destroyed with the car on the same frame. The emitter's On Disable = Stop does both jobs.
 
-**Tuning by ear:** open **Window > Audio System > Audition** with the engine Blend selected, press Play and **Sweep** the RPM (say 900 → 7000 over 4 s, back and forth) while you adjust regions and root values in the Inspector; the Layers table shows each band's level and pitch (§10.5).
+**Tuning by ear:** open **Window > PepperSFX > Authoring > Audition** with the engine Blend selected, press Play and **Sweep** the RPM (say 900 → 7000 over 4 s, back and forth) while you adjust regions and root values in the Inspector; the Layers table shows each band's level and pitch (§10.5).
 
 ---
 
@@ -2585,11 +2590,11 @@ Follow these in order. Steps 1–2 are required; the rest are per-container or p
 ##### Asset Setup
 
 **1. Create an OcclusionLayout asset:**
-- Right-click in your Audio assets folder → Create → Audio System → Occlusion Layout
+- Right-click in your Audio assets folder → Create → PepperSFX → Settings → Occlusion Layout
 - Name it `OcclusionLayout` (one per project)
 
 **2. Open the builder window:**
-- Menu: Window → Audio System → Occlusion Layout
+- Menu: Window → PepperSFX → Mixing → Occlusion Layout
 
 **3. Configure:**
 - **Voice Mixer**: your project's voice mixer (where SFX are routed)
@@ -2771,7 +2776,7 @@ Follow these in order. Each recipe assumes the previous one is done.
 ##### Asset Setup
 
 **1. Create the SendBus asset:**
-- Project ▸ Create ▸ Audio System ▸ Reverb Send Bus
+- Project ▸ Create ▸ PepperSFX ▸ Buses ▸ Reverb Send Bus
 - Name it after the room: `Reverb_Bathroom` (the asset name becomes the bus id and the basis for exposed parameter names)
 
 **2. Configure the SendBus:**
@@ -2792,8 +2797,8 @@ Follow these in order. Each recipe assumes the previous one is done.
 - The mixer now has a `Bathroom` mixer group with an SFX Reverb effect; `Reverb_Bathroom_Wet`, `_Decay`, `_Room`, `_RoomHF`, `_DecayHFRatio`, `_Reflections` are exposed for the runtime driver
 
 **4. Register the bus in the project registry:**
-- Open Window ▸ Audio System ▸ Reverb Send Buses
-- If no registry exists yet, create one: Project ▸ Create ▸ Audio System ▸ Reverb Send Bus Registry
+- Open Window ▸ PepperSFX ▸ Mixing ▸ Reverb Send Buses
+- If no registry exists yet, create one: Project ▸ Create ▸ PepperSFX ▸ Settings ▸ Reverb Send Bus Registry
 - Drop the registry into AudioManager ▸ Reverb Send Bus Registry
 - Click Refresh in the window — your new SendBus appears in the list
 
@@ -2928,7 +2933,7 @@ Use when the mixer window's UI is more convenient (it has the per-parameter slid
 - If you need Cathedral and Cathedral_Crypt to sound different, give them **separate** `ReverbSendBus` assets and point each zone's `ReverbBus` at its own.
 
 **"I added a new ReverbSendBus but it doesn't appear in the dropdowns."**
-- Open Window ▸ Audio System ▸ Reverb Send Buses and click Refresh. The registry only updates when refreshed.
+- Open Window ▸ PepperSFX ▸ Mixing ▸ Reverb Send Buses and click Refresh. The registry only updates when refreshed.
 - After refreshing, re-run the Occlusion Layout Builder so existing occlusion slots get the new bus's Send param authored.
 
 **"Voices on this bus sound dry on the first frame, then reverb kicks in."**
@@ -3917,7 +3922,7 @@ A **parameter** is a number the game sets and sounds read: an engine's RPM, a ca
 
 ##### Parameter assets
 
-**Menu:** Create > Audio System > Parameter
+**Menu:** Create > PepperSFX > States and Parameters > Parameter
 
 | Field | Meaning |
 |---|---|
@@ -3960,7 +3965,7 @@ car.ClearParameter(rpm);
 float value = engine.GetEffectiveParameter(rpm);
 ```
 
-**Audio Emitter** (Add Component > Audio System > Audio Emitter) holds the emitter scope. Posting on it places and attaches 3D sounds exactly as posting with its GameObject does. A post on a plain GameObject has no emitter values, as before. In Play mode its inspector lists the values set on it.
+**Audio Emitter** (Add Component > PepperSFX > Audio Emitter) holds the emitter scope. Posting on it places and attaches 3D sounds exactly as posting with its GameObject does. A post on a plain GameObject has no emitter values, as before. In Play mode its inspector lists the values set on it.
 
 Switch values use the same three scopes: `car.SetSwitch(surface, "Kerb")` for one car, `handle.SetSwitch(...)` for one sound (§4.5).
 
@@ -4189,7 +4194,7 @@ A container's **Doppler** (3D Settings) says who shifts the pitch of its 3D soun
 
 ##### Attenuation assets
 
-**Create > Audio System > Attenuation** makes a distance asset you can share between sounds: how they change with distance from the listening point, as curves over **metres**.
+**Create > PepperSFX > Settings > Attenuation** makes a distance asset you can share between sounds: how they change with distance from the listening point, as curves over **metres**.
 
 | Field | Unit | What it does |
 |---|---|---|
@@ -4294,7 +4299,7 @@ Prevents "machine gun effect" where repeated sounds become obviously repetitive.
 
 #### 4.2 RoutingContainer
 
-**Menu:** Create > Audio System > Routing Container
+**Menu:** Create > PepperSFX > Containers > Routing Container
 
 **Purpose:** Simplest container. Plays all assigned clips simultaneously.
 
@@ -4365,7 +4370,7 @@ public override AudioVoice Play(Vector3 position = default, GameObject parent = 
 
 #### 4.3 RandomContainer
 
-**Menu:** Create > Audio System > Random Container
+**Menu:** Create > PepperSFX > Containers > Random Container
 
 **Purpose:** Picks one random clip per trigger, with weighting and repeat avoidance.
 
@@ -4483,7 +4488,7 @@ Example: Common phrases weight = 5, rare phrases weight = 1
 
 #### 4.4 SequenceContainer
 
-**Menu:** Create > Audio System > Sequence Container
+**Menu:** Create > PepperSFX > Containers > Sequence Container
 
 **Purpose:** Plays clips in a defined order with various playback modes.
 
@@ -4659,7 +4664,7 @@ Called manually for each step
 
 #### 4.5 SwitchContainer
 
-**Menu:** Create > Audio System > Switch Container
+**Menu:** Create > PepperSFX > Containers > Switch Container
 
 **Purpose:** Selects child container based on game state switch value.
 
@@ -4725,7 +4730,7 @@ frontAxle.SetSwitch(surface, "Asphalt");    // the front axle stays on asphalt u
 
 ##### Switch Group assets
 
-**Create > Audio System > Switch Group** makes a group asset: its **Group Name** (empty = the asset's name), its **Values** (Asphalt, Kerb, Grass) and a **Default Value** read when nothing is set. Give it to the Switch's **Switch Group** field (the Switch inspector's **Create Switch Group Asset From Name** button makes one from the name and the entries' values), and each entry's value becomes a dropdown.
+**Create > PepperSFX > States and Parameters > Switch Group** makes a group asset: its **Group Name** (empty = the asset's name), its **Values** (Asphalt, Kerb, Grass) and a **Default Value** read when nothing is set. Give it to the Switch's **Switch Group** field (the Switch inspector's **Create Switch Group Asset From Name** button makes one from the name and the entries' values), and each entry's value becomes a dropdown.
 
 - A group name and an asset with that name are **one switch**: `AudioManager.SetSwitch("Surface", "Grass")`, state and event SetSwitch actions, and a Switch that only names "Surface" all read and write the asset's switch.
 - Setting a value that isn't in the asset's Values warns once per value (a typo would otherwise just play the Default Container).
@@ -4801,7 +4806,7 @@ Entries:
 
 #### 4.6 BlendContainer
 
-**Menu:** Create > Audio System > Blend Container
+**Menu:** Create > PepperSFX > Containers > Blend Container
 
 **Purpose:** Plays multiple containers simultaneously, crossfading them by a parameter.
 
@@ -4986,10 +4991,10 @@ grains per 1000 RPM: 10 s from 1000 to 9000 RPM is plenty. A synthesised sweep i
 exactly: note its range and whether it moves in a straight line or evenly in pitch (most synthesisers). Set each clip to
 **Decompress On Load**: the engine reads its samples.
 
-**2. Cut them into grains** with **Window > Audio System > Engine Grains** (§10.10). Each sweep becomes a **Grain
+**2. Cut them into grains** with **Window > PepperSFX > Engines > Engine Grains** (§10.10). Each sweep becomes a **Grain
 Table**: one grain per engine cycle (two turns), tagged with its RPM.
 
-**3. Make the engine:** **Create > Audio System > Granular Engine (Unity 6.3+)**.
+**3. Make the engine:** **Create > PepperSFX > Containers > Granular Engine (Unity 6.3+)**.
 - **Rpm** and **Load**: the same parameters a loop engine reads (EngineRpm, EngineLoad01). Without Load it plays on
   load only.
 - **On Load** and **Off Load**: the two Grain Tables, blended by load at equal power.
@@ -5012,7 +5017,7 @@ so a rev climbs at an even pace whatever the frame rate; it hears them about a f
 **5. Tune it by ear** in the **Audition** (§10.5): the Rpm and Load parameters get sliders, and a sweep on Rpm plays a
 rev. Generators play outside Play mode.
 
-**An additive layer** (optional): **Create > Audio System > Additive Engine (Unity 6.3+)**. Order 1 is the firing
+**An additive layer** (optional): **Create > PepperSFX > Containers > Additive Engine (Unity 6.3+)**. Order 1 is the firing
 frequency, RPM × **Cylinders** ÷ 120 (Cylinders is a scale, as in Loop Analysis: 6 under loops or sweeps tuned to notes
 at RPM ÷ 20 Hz). Each order (0.5, 1, 1.5, 2… up to 16 of them) has a level **Off Load** and **On Load**, and the load
 moves between them; a little noise, low-passed at **Noise Brightness** times the firing frequency, takes the edge off.
@@ -6614,7 +6619,7 @@ Drag the `Heartbeat_Thump` event asset into the BeatScheduler's `Audio Event` (a
 
 #### 10.5 Audition (outside Play mode)
 
-**Window > Audio System > Audition** plays a container tree, or an event, while you edit it, so an engine can be tuned by ear without driving the car.
+**Window > PepperSFX > Authoring > Audition** plays a container tree, or an event, while you edit it, so an engine can be tuned by ear without driving the car.
 
 1. Select a container or an event in the Project window (with **Follow Selection** on, the window picks it up), or drag one into **Sound**. Press **Play**.
 2. Move the sliders: one for every parameter the tree reads (Blends, pitch follow, Parameter Curves on containers and layers, Switch Group drivers), and for each one's **Bypass Slew While** parameter (an engine cut), in each parameter's range and unit. Values go through each parameter's Smoothing, as in the game; a "heard" line shows where the smoothing has got to. A slider shows the value written: where a sweep or a replay has it, and where a sweep ended.
@@ -6633,7 +6638,7 @@ Drag the `Heartbeat_Thump` event asset into the BeatScheduler's `Audio Event` (a
 
 #### 10.6 Live View and recording a drive (Play mode)
 
-**Window > Audio System > Live View** shows, while the game runs, what each Audio Emitter (each car) is doing:
+**Window > PepperSFX > Debug > Live View** shows, while the game runs, what each Audio Emitter (each car) is doing:
 
 - **Its values:** every parameter set on the emitter, as written and as heard after smoothing, with "moving" while it is still on its way; and its switch values.
 - **Its sounds:** each play posted on it, with its event and container, bus, whether it is Persistent, and whether it is real or virtual; the play's own values (set on its handle, such as each axle's slide speed); and a row per voice: its level (dB), pitch (semitones), its **region** for a layer of a Regions Blend ("1780–2510 RPM at 2300: in", "fading" or "out"), and, when virtual, **why**: over the cap, silent layer, past Max Distance, held by code (`MakeVirtual`), bus paused, emitter paused, or stopping (", fading" while it fades down).
@@ -6649,7 +6654,7 @@ From code: `AudioEmitterRecorder.Begin(emitter, out whyNot)` and `End()` give an
 
 #### 10.7 Loop Analysis
 
-**Window > Audio System > Loop Analysis** measures engine loops (any loop, really). Select clips, or containers or a Blend playing them, press **Use Selection**, then **Analyse**:
+**Window > PepperSFX > Engines > Loop Analysis** measures engine loops (any loop, really). Select clips, or containers or a Blend playing them, press **Use Selection**, then **Analyse**:
 
 - **Root:** the loop's fundamental, and the RPM it means for the **Cylinders** you set: a four-stroke engine fires each cylinder once every two turns, so RPM = fundamental × 120 ÷ cylinders (an inline-4 idling at 900 RPM sounds at 30 Hz, a V8 at 60 Hz). If a recording fools it by an octave, **÷2** and **×2** fix the reading. When the clip's name holds an RPM (the last number between 300 and 20000, as the Engine Builder reads it), a reading more than half an octave from it is flagged under the row: the pitch read an octave off, or a name that isn't the loop's RPM.
 - **Cylinders is a scale.** Start from the engine's count, but go by the loops: their strongest pitch isn't always the firing rate, and a library tuned to notes has a scale of its own (one tuned to notes at RPM ÷ 20 Hz reads on 6, whatever the engine). When most readings sit 2 semitones or more from the RPMs in their names, the window names the count that fits, with a **Use N** button: a V8 library read at 6 is 5 semitones high, and gets 8. Cylinders is one setting for every engine, so set it again for each library: libraries of different engines, or tuned differently, read on different counts.
@@ -6671,7 +6676,7 @@ On a Regions Blend's Inspector, **Detect Root Values** measures each layer's cli
 > **Full version only.** In the free version, build the same tree by hand as the Vehicle Engine RPM recipe describes
 > (§3); Loop Analysis (§10.7) and the Blend inspector's **Detect Root Values** are in both.
 
-**Window > Audio System > Engine Builder** turns a car's engine loops into the whole tree the engine recipe describes (§3, Vehicle Engine RPM):
+**Window > PepperSFX > Engines > Engine Builder** turns a car's engine loops into the whole tree the engine recipe describes (§3, Vehicle Engine RPM):
 
 1. Select the loops and press **Use Selection**. Each row guesses its set (**OffLoad** when its name says off, decel, coast or overrun; else **OnLoad**) and its RPM (the last number between 300 and 20000 in its name: `Eng_OffLoad_2510`, `v8_on_4960rpm`). Correct them, or press **Detect** (§10.7), which uses the **Cylinders** above the rows (the same setting as Loop Analysis's: a scale, see §10.7). Changing Cylinders re-scales the rows Detect measured and keeps the ones you typed. A row more than half an octave from the RPM in its name is flagged under it; when most rows sit 2 semitones or more from their names, the window names the cylinder count that fits instead, with a **Use N** button.
 2. Pick the **RPM** and **Load** parameters, or leave them empty to have EngineRpm (0–9000 RPM, about 15 ms of smoothing) and EngineLoad01 (0–1, up 50 ms, down 150 ms) made. Pick the **Target Bus** and, if you like, an **Attenuation**.
@@ -6686,7 +6691,7 @@ With loops of one set only, the RPM Blend is the engine and there is no load Ble
 
 #### 10.9 The Container Validator and the other windows
 
-**Window > Audio System > Container Validator** checks every container and event in the project:
+**Window > PepperSFX > Authoring > Container Validator** checks every container and event in the project:
 
 - empty entries, null entries, zero weights; a Routing container with no clip;
 - a Regions Blend where nothing plays, or the layers dip below -20 dB, somewhere in its parameter's range, and layers with no region (0–0). Silence from the bottom of the range (a skid at rest, wind at low speed) is a note, not a warning;
@@ -6704,7 +6709,7 @@ With loops of one set only, the RPM Blend is the engine and there is no load Ble
 
 #### 10.10 Engine Grains (Unity 6.3 and later)
 
-**Window > Audio System > Engine Grains** cuts an engine sweep into a **Grain Table** for a Granular Engine (§4.7).
+**Window > PepperSFX > Engines > Engine Grains** cuts an engine sweep into a **Grain Table** for a Granular Engine (§4.7).
 
 1. Drag the sweep into **Sweep**. It must be **Decompress On Load**; if it isn't, the window offers to set it (its
    compression is kept).
@@ -7697,7 +7702,7 @@ That's the slot pool. **One mixer group per slot, N slots per bus.** A pre-built
 
 #### 14.3 Authoring the Slot Layout
 
-Open **Window ▸ Audio System ▸ Occlusion Layout** to author the slot hierarchy:
+Open **Window ▸ PepperSFX ▸ Mixing ▸ Occlusion Layout** to author the slot hierarchy:
 
 1. **Voice Mixer** — assign the project's voice mixer asset.
 2. **Occlusion Layout** — assign or create an `OcclusionLayout` ScriptableObject. This is where the per-bus slot map gets serialized; the runtime reads it at startup.
@@ -7916,7 +7921,7 @@ The bathroom gunshot keeps sounding like a bathroom gunshot regardless of where 
 
 #### 15.4 The ReverbSendBus Asset
 
-One ScriptableObject per acoustic space identity in the project. Create via Project ▸ Create ▸ Audio System ▸ Reverb Send Bus, name it after the room (e.g. `Reverb_Bathroom`).
+One ScriptableObject per acoustic space identity in the project. Create via Project ▸ Create ▸ PepperSFX ▸ Buses ▸ Reverb Send Bus, name it after the room (e.g. `Reverb_Bathroom`).
 
 Three layers of fields:
 
@@ -7955,7 +7960,7 @@ One per project. A flat list of every `ReverbSendBus` asset in the project, used
 - The runtime drivers, to enumerate which buses exist and which mixer parameters to write to.
 - The Occlusion Layout Builder, to author one Send effect per registered bus on every occlusion slot.
 
-Create via Project ▸ Create ▸ Audio System ▸ Reverb Send Bus Registry. Open the Reverb Send Buses window (Window ▸ Audio System ▸ Reverb Send Buses) and click Refresh — the registry auto-populates from every `ReverbSendBus` asset in the project.
+Create via Project ▸ Create ▸ PepperSFX ▸ Settings ▸ Reverb Send Bus Registry. Open the Reverb Send Buses window (Window ▸ PepperSFX ▸ Mixing ▸ Reverb Send Buses) and click Refresh — the registry auto-populates from every `ReverbSendBus` asset in the project.
 
 Drop the registry into `AudioManager` ▸ Reverb Send Bus Registry. The runtime gates the reverb-sends driver on the registry being assigned and non-empty.
 
@@ -7972,7 +7977,7 @@ Two complementary editor UIs:
 | **Apply Params → Mixer**  | Pushes the SO's parametric values into the existing mixer effect without re-running the group/expose work. Use after tweaking parametric values on the SO that you want reflected on the mixer side. |
 | **Pull Params ← Mixer**   | Copies the mixer effect's current values back onto the SO. Use after tweaking the mixer-window sliders that you want reflected on the SO side. |
 
-**Project-wide window** — Window ▸ Audio System ▸ Reverb Send Buses:
+**Project-wide window** — Window ▸ PepperSFX ▸ Mixing ▸ Reverb Send Buses:
 
 | Button                            | What it does                                                                       |
 |-----------------------------------|------------------------------------------------------------------------------------|
@@ -8178,7 +8183,7 @@ The editor import pipeline (`Editor/AudioImport/`) stamps each clip's import set
 | Ambience | **Streaming** | Vorbis | no | few instances, long |
 | Dialogue | Compressed In Memory | Vorbis | no | many lines, decode on demand |
 
-**Your project's settings.** The presets live in an **Audio Import Settings** asset in your project (Create ▸ Audio System ▸ Import Settings, anywhere under Assets). Until you make one, the code defaults above apply. The package ships none: an installed package is read-only, so one there couldn't be saved. With more than one, the first by path is used and the Console says which.
+**Your project's settings.** The presets live in an **Audio Import Settings** asset in your project (Create ▸ PepperSFX ▸ Settings ▸ Import Settings, anywhere under Assets). Until you make one, the code defaults above apply. The package ships none: an installed package is read-only, so one there couldn't be saved. With more than one, the first by path is used and the Console says which.
 
 **Folder rules.** In the settings asset's **Folder Rules**, each rule is a name (its own category: "Engine loops", "Tyres"), a folder, whether it covers the folders below, and import settings. A clip imported into that folder **for the first time** gets the rule's settings, so engine loops dropped into `Assets/Audio/Cars/Engines` come in mono and Decompress On Load without a trip to the Import Manager. The most specific folder wins. Clips already in the project keep their settings, even when they are reimported, so a hand tweak is never undone; **Apply to Existing Clips** on a rule re-applies it. With no rules, imports are Unity's as before.
 
@@ -8237,7 +8242,7 @@ The actual unload fires only when that total hits **0**, and then only after a *
 
 #### 16.6 Authoring window — convert clips in one click
 
-**Window ▸ Audio System ▸ Addressable Audio Authoring** does the whole "mark addressable + set address + assign label + null the direct clip" in one click, across Random / Sequence / Routing containers, and keeps the groups tidy afterwards — no Groups-window round-trip. It has two tabs.
+**Window ▸ PepperSFX ▸ Loading ▸ Addressable Audio Authoring** does the whole "mark addressable + set address + assign label + null the direct clip" in one click, across Random / Sequence / Routing containers, and keeps the groups tidy afterwards — no Groups-window round-trip. It has two tabs.
 
 **Convert Containers**
 
@@ -8267,7 +8272,7 @@ A clip asset you delete from the project leaves its Addressables group by itself
 #### 16.7 Diagnostics
 
 - **Precise miss warnings.** An address that can't resolve — **no backend active**, a **typo**, or an **unregistered** key — logs a precise, clickable, **once-per-address** warning instead of dropping silently. (An *expected* cold-drop — backend active, clip simply not preloaded yet — is not warned.)
-- **Loading Validator.** **Window ▸ Audio System ▸ Loading Validator** → **Validate** scans every container asset and the open scene's `AmbientSource`s and reports: an address but no backend; an unregistered / typo'd address; an entry with *both* a clip and an address; addressable content but no `AddressableAudioRuntime` in the scene. Each finding has a **Select** button. The validator uses reflection, so it runs **even without the Addressables package installed**.
+- **Loading Validator.** **Window ▸ PepperSFX ▸ Loading ▸ Loading Validator** → **Validate** scans every container asset and the open scene's `AmbientSource`s and reports: an address but no backend; an unregistered / typo'd address; an entry with *both* a clip and an address; addressable content but no `AddressableAudioRuntime` in the scene. Each finding has a **Select** button. The validator uses reflection, so it runs **even without the Addressables package installed**.
 
 #### 16.8 How it works (architecture)
 
@@ -8303,7 +8308,7 @@ SFXSystem.Addressables  (gated by com.unity.addressables)
 |---|---|
 | Addressable sound never plays | The clip is **cold** (its zone bank wasn't preloaded) → drop-on-cold. Confirm a `ZoneAudioBank` with the right label is on the zone and an `AddressableAudioRuntime` is in this scene or an earlier one. Check the entry's key is the clip's Addressables **address**, not its GUID (run the Loading Validator). Watch the Debug Overlay. |
 | Addressable sound plays in the editor but not in a build | Its group isn't in builds: no Content Packing & Loading schema (a blank group from the Addressables Groups window) or **Include in Build** off. Addressables only says so while building ("does not have any associated AddressableAssetGroupSchemas"). The Authoring window's **Groups** tab flags the group and **Include in Builds** fixes it (§16.6); then rebuild the Addressables content. |
-| `references addressable key '…', but no Addressables backend is active` | No backend installed/active: install `com.unity.addressables` **and** add an `AddressableAudioRuntime`, or assign a direct `AudioClip` to that entry. |
+| `references addressable key '…', but no Addressables backend is active` | No backend installed or active: assign a direct `AudioClip` to that entry, or (full version only) install `com.unity.addressables` **and** add an `AddressableAudioRuntime` (Add Component > PepperSFX > Loading > Addressable Audio Runtime). |
 | An entry has both a clip and an address | A contradiction — the populated clip eager-loads. The **Loading Validator** flags it; null the direct clip (or Revert the entry). |
 | Clip unloads mid-play / click on zone exit | Should not happen — residency is voice-refcounted. Check you didn't call `AudioClipWarmer.Unload` (blunt) or a raw `Addressables.Release` outside the refcounted source. |
 | Load/unload churn at a zone border | Increase **Linger Seconds** on `AddressableAudioRuntime`. |
@@ -8318,7 +8323,7 @@ SFXSystem.Addressables  (gated by com.unity.addressables)
 
 Multiplayer support lets you **post a sound on one player's machine and have every player hear it** — without your audio code knowing which netcode stack the project uses, and without changing anything about how local audio works. The API surface lives in [API_REFERENCE.md → Netcode (Multiplayer)](API_REFERENCE.md#netcode-multiplayer).
 
-**Applies to:** `SFXSystem.Netcode` (Phases 0–7). **Verified backends:** FishNet v4 (Phases 0–7 on one PC and on two PCs over a real network) · Netcode for GameObjects (NGO) 2.x (light testing only so far, not the full check FishNet had; expect rough edges). **Planned:** Mirror · NGO 1.x back-compat · position quantization.
+**Applies to:** `SFXSystem.Netcode` (Phases 0–7). **Verified backends:** FishNet v4 (Phases 0–7 on one PC and on two PCs over a real network) · Netcode for GameObjects (NGO) 2.x (light testing only so far, not the full check FishNet had; expect rough edges) · Mirror 96 or newer (new in 3.1.1: its automated host-mode tests pass, the checks with several players are still to do). **Planned:** NGO 1.x back-compat · position quantization.
 
 #### 17.1 The one thing to understand first
 
@@ -8350,17 +8355,17 @@ The audio system never references a netcode package. You install **one** stack (
 |---|---|
 | `SFXSystem.Runtime` | The audio engine. Knows nothing about networking. |
 | `SFXSystem.Netcode` (core) | The agnostic contract: payload, transport interface, router, replicator, clock/transport, and the `NetworkedAudioManager` façade. References Runtime only. |
-| `SFXSystem.Netcode.Ngo` / `.FishNet` / … | One tiny adapter per backend — the *only* code that references that stack. Auto-enabled when its package is installed. |
+| `SFXSystem.Netcode.Ngo` / `.FishNet` / `.Mirror` | One tiny adapter per backend — the *only* code that references that stack. Auto-enabled when its package is installed. |
 
 #### 17.3 Quick Start
 
-**Step 1 — Install a netcode backend.** NGO: Package Manager → *Netcode for GameObjects*. FishNet: import from the Asset Store. The matching adapter (`SFXSystem.Netcode.Ngo` / `.FishNet`) enables itself. Install only **one** stack.
+**Step 1 — Install a netcode backend.** NGO: Package Manager → *Netcode for GameObjects*. FishNet: import from the Asset Store. Mirror: import from the Asset Store (version 96 or newer). The matching adapter (`SFXSystem.Netcode.Ngo` / `.FishNet` / `.Mirror`) enables itself. Install only **one** stack.
 
-**Step 2 — Give your events stable IDs.** Open **Window ▸ Audio System ▸ Audio Event IDs** and click **Capture All Missing IDs**. Every event needs a non-zero **Stable ID** to be networkable. Newly created events get one automatically on import; the sweep back-fills older ones.
+**Step 2 — Give your events stable IDs.** Open **Window ▸ PepperSFX ▸ Multiplayer ▸ Audio Event IDs** and click **Capture All Missing IDs**. Every event needs a non-zero **Stable ID** to be networkable. Newly created events get one automatically on import; the sweep back-fills older ones.
 
-**Step 3 — Put the transport in your scene.** Create one networked object and add the matching transport component: NGO → `NetworkObject` + `NgoAudioTransport`; FishNet → `NetworkObject` + `FishNetAudioTransport`. **Exactly one** per session, on a persistent networked object (e.g. an `AudioNetwork` GameObject) — **not** on per-player objects. It must be **active** in the scene.
+**Step 3 — Put the transport in your scene.** Create one networked object and add the matching transport component: NGO → `NetworkObject` + `NgoAudioTransport`; FishNet → `NetworkObject` + `FishNetAudioTransport`; Mirror → `NetworkIdentity` + `MirrorAudioTransport` (**Add Component ▸ PepperSFX ▸ Multiplayer**). **Exactly one** per session, on a persistent networked object (e.g. an `AudioNetwork` GameObject) — **not** on per-player objects. It must be **active** in the scene, and the scene saved. On Mirror, each client also needs a player object (§17.7).
 
-**Step 4 — (optional) Add settings & health-check.** Drop a **`NetworkAudioSettings`** component in the scene to opt into proximity culling, an authority validator, and the clock tunables (§17.5). With none present, sensible defaults apply (validation allow-all, culling off). Open **Window ▸ Audio System ▸ Network Audio Debug** in Play mode to watch live session/clock/loop state.
+**Step 4 — (optional) Add settings & health-check.** Drop a **`NetworkAudioSettings`** component in the scene to opt into proximity culling, an authority validator, and the clock tunables (§17.5). With none present, sensible defaults apply (validation allow-all, culling off). Open **Window ▸ PepperSFX ▸ Multiplayer ▸ Network Audio Debug** in Play mode to watch live session/clock/loop state.
 
 **Step 5 — Post networked sounds.**
 ```csharp
@@ -8472,6 +8477,15 @@ NetworkedAudioManager.PostNetworkedQuantized("stinger", pos, Quantize.NextBar);
 
 **FishNet v4** — Adapter `FishNetAudioTransport`, gated on the `FISHNET` define. The transport's `NetworkObject` **must be active in the loaded scene** — it only registers once the object network-spawns (if a freshly added object doesn't spawn, save the scene). Late-join snapshot fires from `OnSpawnServer(NetworkConnection)` — per-observer, robust timing. Client ids can start at 0, so server-authored loop ids use a reserved `0xFFFFFFFF` owner namespace (handled for you).
 
+**Mirror 96 or newer** — Adapter `MirrorAudioTransport`, gated on Mirror's own `MIRROR_96_OR_NEWER` define. Put it on a scene object with a `NetworkIdentity` in your online scene, and save the scene (Mirror gives scene objects their ids when the scene is saved). It sets that identity to **Force Shown**, so interest management never hides it.
+
+- **Pepper client ids.** A Mirror client never learns its own connection id (only the server knows it), so the transport gives each player an id of its own when it joins: the host 0, then 1, 2, 3 …, never reused. Your `ListenerPositionProvider` and validator receive these ids. On the server, `TryGetConnection(clientId, out conn)` and `TryGetClientId(conn, out clientId)` translate between them and Mirror's connections; `conn.identity` is the player object. `JoinedClientIds` lists everyone who has joined.
+- **Joining.** A client asks to join when it loads the transport, and the server's answer brings its id and the late-join snapshot together. Until that answer arrives (one round trip), the client's networked sounds play locally only.
+- **A client needs a player object.** Mirror spawns scene objects, this one included, only for clients that have one. The NetworkManager's **Auto Create Player** (on by default) takes care of it. The server logs a warning about a client that stays without one for 5 seconds.
+- **The clock** is Mirror's predicted time minus half the round trip: "server now" on every machine. Mirror's own `NetworkTime.time` is deliberately behind and speeds up or slows down to catch up, so it isn't used.
+- **Latency.** The server sends once per send interval (the NetworkManager's **Send Rate**, 60 Hz by default), so a relayed sound can leave up to about 17 ms later than on FishNet. Raise Send Rate if that matters.
+- *New in 3.1.1. Its automated tests run a host (server and its own player in one process); the checks with several players are still to do.*
+
 > Run **one** backend at a time. Both adapters can be *present* in the project (each is gated), but you start a session with a single stack.
 
 #### 17.8 Current limitations (by design, for now)
@@ -8483,13 +8497,14 @@ NetworkedAudioManager.PostNetworkedQuantized("stinger", pos, Quantize.NextBar);
 - **Cross-machine tightness is bounded by the clock estimate** — quantization buys slot-agreement and drift-immunity, not closeness.
 - **Position is full precision** (quantization for smaller packets is a future optimization). **Static / single-context** (one `AudioManager`, one router, one transport per process).
 - **Scale.** Built for co-op and competitive sessions, scaling as far as your chosen netcode's authoritative-server model does (typically tens of players). Adds proximity culling but not MMO-grade interest management or sharding; for hundreds+ concurrent players a different replication architecture is required.
-- **Breadth still open:** Mirror adapter and NGO 1.x back-compat. The NGO 2.x adapter has had light testing only.
+- **Breadth still open:** NGO 1.x back-compat. The NGO 2.x adapter has had light testing only, and the Mirror adapter (new in 3.1.1) only its host-mode tests so far.
 
 #### 17.9 Extending: writing a new backend adapter
 
 1. Create a gated assembly under `Netcode/Adapters/<Stack>/` referencing `SFXSystem.Runtime`, `SFXSystem.Netcode`, and that stack's runtime assembly, constrained on the stack's define symbol.
 2. Implement `INetworkAudioTransport` on a networked behaviour: **Play** via the stack's RPCs in `Broadcast`, raise `OnEventReceived` on receipt, marshal the `emitter` GameObject to a net-id and implement `TryResolveEmitter`; **Stop** via `BroadcastStop` → `OnStopReceived`; **Scope `All`** originates directly to all clients + host (never a dedicated server); **Scheduled / transport** implement `BroadcastScheduled` / `BroadcastTransport` and raise `OnScheduledReceived` / `OnTransportReceived` / `OnLoopJoinReceived`, expose `ServerTime` + `RoundTripTime`; **Late join** replays `NetworkAudioRegistry.Snapshot(...)` to a joining client; **Register** with `NetworkAudioRouter.Register(this)` / `Unregister(this)` and pump `AudioEventReplicator.Tick()` + `NetworkClock.Tick()` from `Update`.
 3. Relay to everyone **except the sender** (it already played the local echo).
+4. If the stack's clients don't know their own id (Mirror is one), keep a `NetworkAudioPeerTable` on the server: it hands each player a Pepper id (host 0, then 1, 2, 3 …, never reused, never the reserved namespaces) for the server to send it. The Mirror adapter shows how.
 
 The core and the audio runtime never change.
 
@@ -8511,6 +8526,10 @@ The core and the audio runtime never change.
 | A late joiner's Tier-2 loop is out of phase for a cycle or two, goes quiet, then locks on | Known issue — Tier 2 is experimental (§17.4). Tiers 0 and 1 don't have it. |
 | One machine's audio slows down, crackles, or drifts badly even on Tier 0 | That machine's audio device is falling behind (its audio clock runs slow), not the network. Check the output device and its buffer size; close audio-heavy apps. Tier 2 re-anchors each cycle and recovers once the device does. |
 | Quantized cue does nothing / warns | No musical transport set — call `NetworkMusicTransport.SetTempo(...)` on the server first. |
+| On Mirror, one client never hears networked sounds | It has no player object, so Mirror never spawned the transport for it (the server warns after 5 s). Turn on the NetworkManager's **Auto Create Player**, or add a player for that client. |
+| Compile errors in `SFXSystem.Netcode.Mirror` after removing Mirror | Mirror leaves its `MIRROR…` defines behind. Remove them in **Project Settings > Player > Scripting Define Symbols**. |
+| "Pepper's Mirror adapter needs Mirror 96 or newer" | Update Mirror. The adapter stays off on older versions. |
+| FishNet and Mirror in one project: `MirrorUpgrade.cs` doesn't compile | FishNet's tool for moving from Mirror still names a class Mirror 96 removed (`NetworkTransformChild`). Delete `Assets/FishNet/Upgrading/` if you don't need it. |
 
 #### 17.11 Dedicated servers: Inert
 
@@ -8702,7 +8721,7 @@ AudioMultiHandle multiHandle = event.PostMultiPosition(emitterParent);
 
 #### Step 1: Create AudioEventRegistry
 
-1. Right-click in Project → `Create > Audio System > Audio Event Registry`
+1. Right-click in Project → `Create > PepperSFX > Settings > Audio Event Registry`
 2. Name it exactly: **"AudioEventRegistry"**
 3. Place in: `Assets/Audio/Resources/AudioEventRegistry.asset`
 
@@ -8797,7 +8816,7 @@ Console output:
 ### Adding New Sounds After Migration
 
 #### Option 1: Quick Wizard (Recommended)
-1. `Window > Audio System > Sound Builder (Simple)`
+1. `Window > PepperSFX > Authoring > Sound Builder (Simple)`
 2. Create sound assets
 3. Open `AudioEventRegistry`
 4. Click **"Populate from Entire Project"**

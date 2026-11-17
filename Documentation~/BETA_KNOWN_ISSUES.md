@@ -2,7 +2,7 @@
 
 This is a heads-up for beta testers: things that may not work as intended in this build yet, and places where the guides are out of date. If you hit one of these, it's already known. If you hit something that isn't listed, please report it.
 
-**Version:** 3.1.0
+**Version:** 3.1.1
 Last updated: November 2026
 
 ---
@@ -19,6 +19,8 @@ Last updated: November 2026
 - **Automatic mixer setup** in the Occlusion Layout and Reverb Send Buses windows has only been tested on Unity 6000.0.48f1 and may fail on newer versions. If it does, click "Diagnose Reflection" in the Occlusion Layout window and send us the console output.
 - **Sound Builder (Simple)** (formerly the Quick Sound Setup Wizard) always warns that events must be in a Resources folder. You can ignore that if you use an Audio Event Registry. Its preview play button may do nothing.
 - **Icons.** Custom icons on SFX assets and components may not show. This is cosmetic only.
+- **Upgrade From Free** (moving a project from free to full without losing anything) is its own package from GitHub, installed next to free; neither version contains it. Its README gives the steps, and peppersfx.com/get links to it. It has been through one real upgrade so far, and the rest of its tests are still to do: back up your project before you run it, even though it zips every file it changes first.
+- **Mirror adapter.** New in 3.1.1 and only tested with a host so far (its automated tests run the server and the host's own player in one process). Sessions with several players haven't been checked yet: please report anything that sounds wrong, such as a sound heard twice, a missed late-join loop, or a departed player's loop that keeps playing.
 - **Unity version.** You need Unity 6000.0.48f1 or newer. Package Manager will let you install on older 6000.0 versions, but those aren't supported. The package's automated tests pass on 6000.0.48f1 and 6000.3.19f1.
 - **Unity 6.3: `AudioExtensions` in your own scripts.** Unity 6.3 added its own `UnityEngine.AudioExtensions`. A script with both `using UnityEngine;` and `using AudioSystem;` that calls `AudioExtensions.LinearToDb` (or `DbToLinear`, `CentsToPitch`) stops compiling with error CS0104. Write `AudioSystem.AudioExtensions.LinearToDb`, or add `using AudioExtensions = AudioSystem.AudioExtensions;` to that file.
 
@@ -32,6 +34,18 @@ Last updated: November 2026
 - **Big bursts of sounds.** If a very large number of sounds start in the same frame, some are skipped (with a warning) when the voice pool can't free voices fast enough. Nothing is cut for a sound that is then skipped. Raise Steal Headroom on the Audio Manager if it happens often.
 - **Decorrelated multi-position playback** may click on sharp sounds like gunshots.
 - **Spatial Mode = Pepper** has no spatializer plugins (HRTF), doesn't read the project's Doppler Factor, and balances a stereo clip rather than placing it (give 3D sounds mono clips). Unity's own AudioSources (the ambient system's) are still heard from the AudioListener: keep it on the primary point with `DriveUnityListener`. Changing the mode affects sounds started after the change.
+
+## Changes since 3.1.0
+
+- **Menus.** Everything is under **PepperSFX** now, in categories, instead of one long "Audio System" list:
+  - **Window > PepperSFX**: Authoring, Mixing, Engines, Loading, Multiplayer, Debug and Setup.
+  - **Create > PepperSFX**: the Sound Builders and Audio Event at the top, then Containers, States and Parameters, Buses and Settings.
+  - **Add Component > PepperSFX**: the Audio Manager (new to the menu), the emitters and the Beat Scheduler, then Propagation, Loading and Multiplayer. They used to sit under "Audio", "Audio System" and "SFX System".
+  - **Tools > PepperSFX** for the diagnostics.
+
+  The windows' tabs carry the same names as the menu items. The Mixer's tab is "PepperSFX Mixer", so it isn't mistaken for Unity's own Audio Mixer. A window docked before you updated keeps its old tab name until you close and reopen it.
+- **Welcome window.** It opens by itself the first time you open a project with Pepper.SFX, and once after each update to a new release, with the first steps (add an Audio Manager, open Sound Builder (Simple), the code to post an event) and links to the guides. Untick "Show this window when Pepper.SFX is installed or updated" if you don't want that; Window > PepperSFX > Setup > Welcome opens it any time.
+- **Mirror adapter (full version).** New: `MirrorAudioTransport`, for Mirror 96 or newer. On Mirror, your listener provider and validator receive Pepper's client ids (host 0, then 1, 2, 3 …), not Mirror's connection ids, which clients never learn. See Manual §17.7.
 
 ## Changes since 3.0.0
 
@@ -78,7 +92,7 @@ Last updated: November 2026
 - **`SwitchContainer.SetSwitch`** used to do nothing until that container had played once. It now works straight away.
 - **A Sequence in a far-away sound.** When a sound has gone virtual (silent because it's far away or less important), its Sequence's next clip now starts virtual too. Before, it started audible and could push a more important sound out for half a second.
 - **Distance assets and Distance/Approach Speed/Angle.** New **Attenuation** assets describe how 3D sounds fade, dull, thin and narrow with distance, shared between containers; a sound past its Max Distance goes silent (virtual) until it comes back in range. Parameter assets can take their value from Distance, Approach Speed or Angle. Containers without an Attenuation asset work as before. See "Attenuation assets" (Manual §4.1) and "Built-in values" (§3.4).
-- **Audition.** New Window > Audio System > Audition plays a container while you edit it, with sliders for its parameters, a sweep and a live layer table, outside Play mode. Please report anything it leaves behind or any sound that differs from Play mode beyond the known limits (heard 2D; Sequences play their first clip). See Manual §10.5.
+- **Audition.** New Window > PepperSFX > Authoring > Audition plays a container while you edit it, with sliders for its parameters, a sweep and a live layer table, outside Play mode. Please report anything it leaves behind or any sound that differs from Play mode beyond the known limits (heard 2D; Sequences play their first clip). See Manual §10.5.
 - **Audio's random numbers are its own.** Which variation plays, and volume and pitch randomization, no longer use Unity's random generator: each Audio Emitter has its own sequence (with an optional Random Seed), other sounds share one. Your gameplay's random sequence is no longer changed by sounds playing. If you relied on `Random.InitState` to get the same audio picks, set the Audio Emitter's Random Seed instead, or set the Audio Manager's Random Numbers to Unity. Multiplayer posts work as before.
 - **No-repeat per car.** A Random container's Avoid Repeat Last now applies per Audio Emitter: each car avoids its own recent clips.
 - **Per-car limits and values at post.** Events have Max Instances Per Emitter and Cooldown Per Emitter (off by default), and a post can carry values for its sound (`PostValues`). See "Per Audio Emitter" (Manual §5.3) and "Values at post" (§3.4).
@@ -98,7 +112,7 @@ Last updated: November 2026
 - **Tools for authoring engines and mixes.** The Audition plays events too, runs several sweeps at once, and replays a drive recorded in the new **Live View** (Play mode: every Audio Emitter's values and sounds, and why a voice is virtual). New **Loop Analysis** (a loop's RPM, seam and loudness) and **Engine Builder** (an engine's whole tree from its loops). See Manual §10.5–§10.9. Please report anything they get wrong.
 - **Container Validator** checks events too, and Blends' regions, pitch and Doppler. It no longer reports "No mixer group" on every container: a Play action with neither a Target Bus nor a Mixer Group is what it warns about now.
 - **Events outside the registry.** The event Inspector no longer says an event "will NOT load at runtime", and no warning is logged on import: an event held in a field plays wherever it is. Only posting by name or id needs the registry.
-- **Import settings.** The package no longer ships an Audio Import Settings asset (it couldn't be saved once installed). Make one in your project (Create > Audio System > Import Settings) to change the presets; without one the defaults apply, the same values the shipped asset had. New **Folder Rules** apply settings to clips first imported into a folder.
+- **Import settings.** The package no longer ships an Audio Import Settings asset (it couldn't be saved once installed). Make one in your project (Create > PepperSFX > Settings > Import Settings) to change the presets; without one the defaults apply, the same values the shipped asset had. New **Folder Rules** apply settings to clips first imported into a folder.
 - **Bus faders, mute and solo** in the Mixer and Audio Profiler windows can be undone, and are saved with the project, also when moved in Play mode.
 - **Audio Profiler and Voice Pool Debug.** Voice Usage is now real voices against Max Real Voices (it read 50% at the cap); the pool window compares its objects with the pool's whole size.
 - **Handle volume and pitch reach later voices.** `SetVolumeScale` and `SetPitchOffset` on a handle now also reach the voices the sound starts later: a Switch's new choice, a Sequence's next clip, a Play action with a Delay. Before, those started at the authored level and pitch. `SetVolumeAbsolute` and `SetPitchAbsolute` still reach only the voices playing now. New: `SetVolumeOffset` (dB), and both offsets can be given at the post (`PostValues.WithVolumeOffset`, `WithPitchOffset`).
@@ -122,7 +136,6 @@ Last updated: November 2026
 
 ## Full version only
 
-- **Upgrade From Free** may not work in this beta. Don't convert a real project yet, and back up first if you try it.
 - **Multiplayer** is tested with FishNet v4. Netcode for GameObjects 2.x has had only light testing so far, so expect rough edges. NGO 1.x and FishNet v3 cause compile errors.
 - **Addressables: one group for every zone saves no memory.** Unity can only unload a bundle as a whole, so with every zone's clips in one Pack Together group (like the Default Group), leaving a zone frees nothing. The Addressable Audio Authoring window and Sound Builder now put each bank's clips in its own group by default. If you converted zones into the Default Group with an earlier build, the window's Groups tab flags it and can switch it to one bundle per clip. See "Authoring window" in the User Guide.
 - **Phase-locked loops (Loop Sync Tier 2)** are experimental. A player who joins late may hear the loop out of sync for one or two cycles before it locks in.

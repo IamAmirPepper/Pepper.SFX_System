@@ -2,6 +2,19 @@
 
 All notable changes to `com.pepper.sfx`. Versions follow semantic versioning; `-dev.N` versions are snapshots for testing in other projects before a release.
 
+## 3.1.1 (17 November 2026)
+
+### Added
+- **Mirror adapter** (`MirrorAudioTransport`, Mirror 96 or newer; full version). Put it on one scene object with a `NetworkIdentity`. A Mirror client never learns its own connection id, so each player gets a Pepper client id when it joins (host 0, then 1, 2, 3 …), and that is the id your listener provider and validator receive on Mirror; `TryGetConnection` and `TryGetClientId` translate. The late-join snapshot comes with the join. A client needs a player object, or Mirror never spawns the transport for it (the server warns). Tested so far with its automated host-mode tests; the checks with several players are still to do.
+- `NetworkAudioPeerTable`: the server-side id table behind it, for any backend whose clients don't know their own id.
+- **Welcome window** (`Window > PepperSFX > Setup > Welcome`; free and full). The first steps in one place: add an Audio Manager to the open scene, open Sound Builder (Simple), and the code to post an event. Links to the guides, and how to move a free project to full. It opens by itself once per project the first time the editor loads Pepper.SFX, and once after each update to a new release; untick "Show this window when Pepper.SFX is installed or updated" to stop that. Never in batch mode, and it never opens a website by itself.
+
+### Changed
+- **Menus under PepperSFX, in categories.** Window > PepperSFX has Authoring, Mixing, Engines, Loading, Multiplayer, Debug and Setup. Create > PepperSFX has the Sound Builders and Audio Event at the top, then Containers, States and Parameters, Buses and Settings. Add Component > PepperSFX replaces "Audio", "Audio System" and "SFX System", and adds the Audio Manager and the multiplayer components, which had no entry. Tools > PepperSFX has the diagnostics. Help texts and the guides give the new paths. The menu paths in the 3.1.0 entries below are the old ones.
+- **Upgrade From Free is its own package** (`com.pepper.sfx.upgrade`, "Pepper.SFX Upgrade From Free", from GitHub), no longer the `UpdateToPaid/` folder inside this one. It's installed next to free, so it's still there after free is removed, and neither free nor full contains it. Its window, menu path and steps are unchanged, except that the upgrade package is installed first.
+- **The "no Addressables backend is active" warning** now says first to give the entry a direct AudioClip, then that loading through Addressables needs the full version, and how to set it up there. It used to tell free users to add a component free doesn't have.
+- **Window tabs** carry the same names as their menu items (Import Manager, Container Validator, Loading Validator, Voice Pool Debug, EQ Spectrum Visualizer, Addressable Audio Authoring, Network Audio Debug). The Mixer's tab is "PepperSFX Mixer", so it isn't mistaken for Unity's own Audio Mixer.
+
 ## 3.1.0 (14 November 2026)
 
 The free version 3.1.0 came out on this date. The full version follows on the Unity Asset Store.
