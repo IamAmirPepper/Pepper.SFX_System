@@ -65,22 +65,23 @@ void PlayFootstep()
 
 ## 🛠️ The editor windows
 
-Everything lives under `Window ▸ Audio System`. In the order you'll likely meet them:
+Everything lives under `Window ▸ PepperSFX`, grouped by what it's for (the Menu column). In the order you'll likely meet them:
 
-| Window | What it does for you |
-|---|---|
-| **Sound Builder (Simple)** | From audio files to a playable sound: creates the bus, container and event and wires them together. The fastest way to your first sound (it used to be the Quick Sound Setup Wizard). |
-| **Import Manager** | Pick a category (SFX, Music, UI, Dialogue…) and the right Unity import settings are applied. **Folder Rules** give every clip first imported into a folder that folder's settings, so nobody fiddles with compression per file. |
-| **Audio Explorer** | Every event, container and bus in one browsable window: click to inspect, press play to preview. |
-| **Audition** | Plays a sound or an event while you edit it, outside Play mode: a slider for every parameter it reads, its switch values, sweeps (RPM 900 → 7000 over 4 s), and each layer's level and pitch. Tune an engine by ear without driving the car. |
-| **Live View** | In Play mode, what every Audio Emitter is doing: its values, its sounds, each voice's level and pitch, and why a voice went virtual. Record one emitter, then replay it in the Audition to tune the mix on a real lap. |
-| **Voice Pool Debug** | A live table of everything playing, real and virtual, with why each virtual one is. Your first stop when something *sounds* wrong. |
-| **Container Validator** | Checks every container and event for authoring mistakes (empty or zero-weight entries, a Blend with silent gaps, a Play action with no bus) and fixes them, with Undo. Run it before a build. |
-| **Loop Analysis** | Measures a loop: whether it clicks where it goes round, the level across the seam, RMS, peak and loudness (LUFS), and an engine loop's pitch and RPM. |
-| **Occlusion Layout** | One-click setup for occlusion: builds the mixer slots that wall-muffling needs. Run it once, forget it exists. |
-| **Reverb Send Buses** | Create and manage per-room reverb from one overview, without hand-editing the mixer. |
-| **Audio Event IDs** | Gives each event a permanent, rename-proof ID and flags duplicates. |
-| **Toggle Icon Overlays** | Puts audio-type icons on your assets in the Project window. |
+| Window | Menu | What it does for you |
+|---|---|---|
+| **Welcome** | Setup | Opens by itself the first time (and after each update): adds an Audio Manager to your scene, opens Sound Builder (Simple), shows the code to play a sound, and links to the guides. |
+| **Sound Builder (Simple)** | Authoring | From audio files to a playable sound: creates the bus, container and event and wires them together. The fastest way to your first sound (it used to be the Quick Sound Setup Wizard). |
+| **Import Manager** | Setup | Pick a category (SFX, Music, UI, Dialogue…) and the right Unity import settings are applied. **Folder Rules** give every clip first imported into a folder that folder's settings, so nobody fiddles with compression per file. |
+| **Audio Explorer** | Authoring | Every event, container and bus in one browsable window: click to inspect, press play to preview. |
+| **Audition** | Authoring | Plays a sound or an event while you edit it, outside Play mode: a slider for every parameter it reads, its switch values, sweeps (RPM 900 → 7000 over 4 s), and each layer's level and pitch. Tune an engine by ear without driving the car. |
+| **Live View** | Debug | In Play mode, what every Audio Emitter is doing: its values, its sounds, each voice's level and pitch, and why a voice went virtual. Record one emitter, then replay it in the Audition to tune the mix on a real lap. |
+| **Voice Pool Debug** | Debug | A live table of everything playing, real and virtual, with why each virtual one is. Your first stop when something *sounds* wrong. |
+| **Container Validator** | Authoring | Checks every container and event for authoring mistakes (empty or zero-weight entries, a Blend with silent gaps, a Play action with no bus) and fixes them, with Undo. Run it before a build. |
+| **Loop Analysis** | Engines | Measures a loop: whether it clicks where it goes round, the level across the seam, RMS, peak and loudness (LUFS), and an engine loop's pitch and RPM. |
+| **Occlusion Layout** | Mixing | One-click setup for occlusion: builds the mixer slots that wall-muffling needs. Run it once, forget it exists. |
+| **Reverb Send Buses** | Mixing | Create and manage per-room reverb from one overview, without hand-editing the mixer. |
+| **Audio Event IDs** | Multiplayer | Gives each event a permanent, rename-proof ID and flags duplicates. |
+| **Toggle Icon Overlays** | Setup | Puts audio-type icons on your assets in the Project window. |
 
 Plus **custom inspectors with live diagnostics** on `AudioZone`, `AudioPortal`, `PropagationManager`, `ReverbSendBus` and `AudioManager` (including a live voice-pool readout while playing), and an icon for every asset and component.
 
@@ -131,7 +132,7 @@ Then follow the Quick Start in the User Guide: add an Audio Manager to your scen
 | **Addressables loading**, with banks per zone | — | ✅ |
 | Source code | Compiled DLLs | ✅ Full C# source, and example scripts |
 
-**Moving to full.** Free and full can't sit in the same project, so when the full version is out, a free upgrade package will do the move: install it, remove free, import full, and run **Window ▸ Audio System ▸ Upgrade From Free**. It rewrites every script reference once, so nothing you build in free is lost.
+**Moving to full.** Free and full can't sit in the same project, so when the full version is out, a free upgrade package will do the move: install it, remove free, import full, and run **Window ▸ PepperSFX ▸ Setup ▸ Upgrade From Free**. It rewrites every script reference once, so nothing you build in free is lost.
 
 ---
 
