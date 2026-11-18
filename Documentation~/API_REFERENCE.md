@@ -1,6 +1,6 @@
 # SFX System - API Reference
 
-**Version:** 3.1.1
+**Version:** 3.1.2
 **Unity Compatibility:** 6000.0.48f1 and above
 **Last Updated:** October 2026
 
@@ -1785,8 +1785,8 @@ later (its `SFXSYSTEM_GENERATORS` define comes from the editor version). On earl
 **Implements:** `UnityEngine.Audio.IAudioGenerator`
 
 An abstract container whose sound is computed while it plays instead of read from a clip: the container is itself the
-Unity 6.3 generator its voice's AudioSource plays. Pepper's engine generators (the granular engine and the additive
-layer, in development) derive from it; so can your own.
+Unity 6.3 generator its voice's AudioSource plays. Pepper's engine generators (the granular engine, the additive layer
+and the Loop Engine) derive from it; so can your own.
 
 ```csharp
 public float Volume { get; }
@@ -1896,6 +1896,62 @@ public float NoiseOnLoad { get; }                        // and on load
 public float NoiseBrightness { get; }                    // 1–32 × the firing frequency
 public const int MaxOrders = 16;
 ```
+
+#### LoopSet
+
+**Menu:** Create > PepperSFX > Settings > Loop Set (Unity 6.3+) · since `3.1.2`
+
+A Loop Engine's loops, each a clip recorded at one steady RPM, cut into pieces one bang long. Filled and cut in its
+inspector (from an Engine Builder RPM Blend, or by hand), or by the Engine Builder's Build As: Loop Engine; not from
+code. It keeps references to the clips (which must be Decompress On Load) and, per loop, each piece's mark (its bang)
+and what the cut read. A loop whose cut doesn't fit its clip as it is now, or the set's Pieces Per Repeat, plays
+nothing until it's cut again.
+
+```csharp
+public IReadOnlyList<LoopSet.Loop> Loops { get; }
+public int PiecesPerRepeat { get; }              // 1, or 2 when alternate firings sound different
+public float MinRpm { get; }
+public float MaxRpm { get; }
+
+// LoopSet.Loop
+public AudioClip Clip { get; }
+public float Rpm { get; }                        // the RPM it was recorded at
+public IReadOnlyList<float> Marks { get; }       // each piece's bang, in the clip's samples, rising
+public bool IsCut(int piecesPerRepeat);          // marks that fit the clip as it is now and that setting
+public float RepeatHz { get; }                   // how often its sound repeats, as Loop Analysis reads it
+public float Confidence { get; }                 // how clearly, 0–1
+public float PieceHz { get; }                    // the rate its pieces were cut at
+public float Alternation { get; }                // the steady difference between alternate pieces' spacing
+public float Spread { get; }                     // how much the spacing varies once that's taken out
+public float AlternateLoudness { get; }          // the quieter of alternate marks' loudness against the louder
+```
+
+#### LoopEngine
+
+**Menu:** Create > PepperSFX > Containers > Loop Engine (Unity 6.3+) · **Extends:** GeneratorContainer · since `3.1.2`
+
+A car engine played from loops recorded at steady RPMs, without the pitch moving the car's resonances. Each loop's
+pieces are laid one after another where their bangs fall at the car's RPM and never resampled (PSOLA): the firing rate
+follows the RPM, the ringing inside each piece doesn't change. Each loop plays in a region of RPM laid out as the
+Engine Builder lays out a Blend's (from halfway to its lower neighbour's RPM to halfway to its upper one's, crossfading
+over Crossfade Share of the gap); at most two loops of a set sound at once. One clock paces a set's pieces (the louder
+loop's spacing at the car's RPM), so two loops in a crossfade bang together. Each loop's pieces go in order round it.
+A loop is pitched at most 12 semitones either way; each piece is scaled by 1/√(pitch ratio), so more firings a second
+don't make it louder. The RPM and load move to each step's values over that step's time. The on-load and off-load sets
+blend by load at equal power. The AudioSource's pitch (Doppler, pitch offsets) applies on top.
+
+```csharp
+public AudioParameter Rpm { get; }          // value 0: the car's RPM
+public AudioParameter Load { get; }         // value 1: 0 off load to 1 on load; null = on load only
+public LoopSet OnLoad { get; }              // the loops; with one set, these
+public LoopSet OffLoad { get; }             // optional
+public float CrossfadeShare { get; }        // 0.05–1, default 0.5
+public CrossfadeShape Shape { get; }        // the crossfade between two loops; default EqualPower
+```
+
+The sets' samples are loaded into memory when a voice starts and stay loaded while the engine asset is; they are read
+again after a cut or a change to a set. A set holds up to 32 loops (the lowest RPMs); loops not cut for their clips are
+left out. With nothing to play a post plays nothing and warns once.
 
 #### GeneratorCost
 
@@ -2665,6 +2721,8 @@ Per clip (Decompress On Load): its fundamental by the YIN method and the Root Va
 **Access:** `Window > PepperSFX > Engines > Engine Builder` (USER_GUIDE §10.8)
 
 From selected loops (each one's set, OnLoad or OffLoad, and RPM guessed from its name, typed, or detected with its own Cylinders slider, shared with Loop Analysis; a detected RPM far from its name's is flagged): one looping single-clip container per loop (Uses Parent Positioning and Output, Avoid Repeat Last 0); an on-load and an off-load Regions Blend on RPM (Root Values, Auto Layout, Equal Power, Pitch Follow, Silent Layers Virtualize, Force Loop); a Regions Blend on load crossfading them at constant power from 0.3 to 0.7 (3D, Doppler Level 0); one Persistent event on the chosen Target Bus. Empty RPM and Load fields make EngineRpm (0–9000 RPM) and EngineLoad01 (0–1). The clips are set to mono and Decompress On Load after a confirmation listing them; no asset is ever overwritten. With one set only, the RPM Blend is the root and there is no load Blend; the window and its dialog say so.
+
+On Unity 6000.3 and later (since `3.1.2`), **Build As: Loop Engine** builds instead a [LoopSet](#loopset) per set (cut once the clips are imported), one [LoopEngine](#loopengine) on RPM and, with both sets, load (3D, the window's Crossfade Share and Attenuation), and the same Persistent event. With one set, its loops are the engine's On Load set and there is no Load parameter.
 
 ### EngineGrainsWindow
 
@@ -4137,6 +4195,10 @@ mh.UpdatePositions(newTransforms);
 ---
 
 ## Version History
+
+**v3.1.2** - November 2026
+- Released 18 November 2026: the free version and the Upgrade From Free package at the same version (the Loop Engine is in the full version, which follows on the Unity Asset Store). See `CHANGELOG.md` at the package root for what changed.
+- **The Loop Engine** (full version, Unity 6000.3 and later): [LoopEngine](#loopengine) and [LoopSet](#loopset), the Loop Set inspector (fill from an RPM Blend, Pieces Per Repeat, Cut), the [Engine Builder](#enginebuilderwindow)'s Build As: Loop Engine, and the Container Validator's rules for them.
 
 **v3.1.1** - November 2026
 - Released 17 November 2026: the free version and the Upgrade From Free package (the full version follows on the Unity Asset Store). See `CHANGELOG.md` at the package root for what changed.

@@ -127,8 +127,8 @@ Then follow the Quick Start in the User Guide: add an Audio Manager to your scen
 | Occlusion, per-zone reverb, convolution reverb (64-bit Windows), ambient propagation | ✅ | ✅ |
 | Multi-position audio | ✅ | ✅ |
 | Editor windows (table above) | ✅ | ✅ + **Sound Builder (Advanced)**, **Mixer**, **Audio Profiler**, **EQ Spectrum Visualizer**, **Loading Validator**, **Addressable Audio Authoring** |
-| **Vehicle engines**: the Engine Builder, and engines generated live from a sweep (experimental, Unity 6000.3+) | — | ✅ |
-| **Multiplayer audio**: FishNet v4, and Netcode for GameObjects 2.x (lightly tested so far) | — | ✅ |
+| **Vehicle engines**: the Engine Builder, the Loop Engine, and engines generated live from a sweep (Unity 6000.3+ for the Loop Engine and the generated engines) | — | ✅ |
+| **Multiplayer audio**: FishNet v4, Mirror 96 or newer (new), and Netcode for GameObjects 2.x (lightly tested so far) | — | ✅ |
 | **Addressables loading**, with banks per zone | — | ✅ |
 | Source code | Compiled DLLs | ✅ Full C# source, and example scripts |
 
@@ -136,17 +136,20 @@ Then follow the Quick Start in the User Guide: add an Audio Manager to your scen
 
 ---
 
-## What's new in 3.1.0
+## What's new
 
-- 🎮 **Split screen**: listening points, and a spatial mode where Pepper pans and fades sounds from several listeners itself, with its own Doppler.
-- 🎚️ **Parameters per object**: Parameter assets with smoothing, set for the whole game, per Audio Emitter or per sound; curves on every container, Blend layer and bus; Distance, Approach Speed and Angle built in; switches driven by a parameter; Blends laid out in regions.
-- 🔊 **Mixing**: ducks that combine, pausing a bus, a voice cap per bus, a player volume, and states that move buses by an offset.
-- 🧠 **A smarter voice pool**: whole sounds stolen with a short fade instead of a cut, virtual voices that come back in step at any pitch, limits and cooldowns per emitter, and Persistent events.
-- 🛠️ **New windows**: the Audition, the Live View with recording, and Loop Analysis. The Quick Sound Setup Wizard is now Sound Builder (Simple), and the Import Manager has Folder Rules.
-- 🖼️ **Icons** for every asset and component.
-- ⚠️ **Some behaviour changed since 3.0.0.** Each change, and what to do about it, is in [BETA_KNOWN_ISSUES.md](./Documentation~/BETA_KNOWN_ISSUES.md) under "Changes since 3.0.0".
+- **3.1.2** (18 November 2026): nothing changes in free; the guides are brought up to date. New in the full version: the **Loop Engine**, which plays a car's engine loops without the pitch changing how big the car sounds.
+- **3.1.1** (17 November 2026): every menu is under **PepperSFX**, in categories (Window, Create, Add Component, Tools), and a **Welcome** window with the first steps opens once.
+- **3.1.0** (14 November 2026):
+  - 🎮 **Split screen**: listening points, and a spatial mode where Pepper pans and fades sounds from several listeners itself, with its own Doppler.
+  - 🎚️ **Parameters per object**: Parameter assets with smoothing, set for the whole game, per Audio Emitter or per sound; curves on every container, Blend layer and bus; Distance, Approach Speed and Angle built in; switches driven by a parameter; Blends laid out in regions.
+  - 🔊 **Mixing**: ducks that combine, pausing a bus, a voice cap per bus, a player volume, and states that move buses by an offset.
+  - 🧠 **A smarter voice pool**: whole sounds stolen with a short fade instead of a cut, virtual voices that come back in step at any pitch, limits and cooldowns per emitter, and Persistent events.
+  - 🛠️ **New windows**: the Audition, the Live View with recording, and Loop Analysis. The Quick Sound Setup Wizard is now Sound Builder (Simple), and the Import Manager has Folder Rules.
+  - 🖼️ **Icons** for every asset and component.
+  - ⚠️ **Some behaviour changed since 3.0.0.** Each change, and what to do about it, is in [BETA_KNOWN_ISSUES.md](./Documentation~/BETA_KNOWN_ISSUES.md) under "Changes since 3.0.0".
 
-Full release notes: [CHANGELOG.md](./CHANGELOG.md).
+Every change, version by version: [CHANGELOG.md](./CHANGELOG.md) (entries marked "full version" aren't in this package).
 
 ---
 

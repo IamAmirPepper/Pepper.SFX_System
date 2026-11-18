@@ -2,6 +2,15 @@
 
 All notable changes to `com.pepper.sfx`. Versions follow semantic versioning; `-dev.N` versions are snapshots for testing in other projects before a release.
 
+## 3.1.2 (18 November 2026)
+
+### Added
+- **The Loop Engine** (`Create > PepperSFX > Containers > Loop Engine (Unity 6.3+)`; full version, Unity 6000.3 and later; Manual §4.7). An engine played from the loop sets the Engine Builder makes, without the pitch changing how big the car sounds. A Blend pitches each loop by playing it faster or slower, so the car's resonances move with the RPM: smaller and thinner above a loop's RPM, muddier below it. The Loop Engine cuts each loop into pieces one bang long and lays them closer together or further apart at the car's RPM, never resampling them (PSOLA): the firing rate follows the RPM, the resonances stay. One voice per car; two loops in a crossfade bang together; the RPM moves smoothly between frames, so a fast rev doesn't climb in steps. About 1.3% of a CPU core per car at the most on a desktop PC; not yet measured on a Steam Deck.
+- **Loop Sets** (`Create > PepperSFX > Settings > Loop Set (Unity 6.3+)`; Manual §10.11): a Loop Engine's loops. Its inspector fills one from an Engine Builder RPM Blend, cuts the loops (one piece per repeat of each loop's sound, or two for engines whose alternate firings differ), and says under each loop how it was cut, or why it couldn't be.
+- **Engine Builder: Build As: Loop Engine** (Unity 6000.3 and later; Manual §10.8): the selected loops as Loop Sets, cut, a Loop Engine and its Persistent event, instead of a Blend tree.
+- **Container Validator** rules for Loop Engines: nothing to play, no RPM parameter, Loop Sets with no loops or loops not cut for their clips, clips that can't be read, a cut the analysis flagged, two loops at one RPM, an off-load set with no Load parameter.
+- Icons for the Loop Engine and the Loop Set.
+
 ## 3.1.1 (17 November 2026)
 
 ### Added

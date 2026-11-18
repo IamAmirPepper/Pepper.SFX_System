@@ -1,6 +1,6 @@
 # SFX System — User Guide
 
-**Version:** 3.1.1
+**Version:** 3.1.2
 **Unity Compatibility:** 6000.0.48f1 and above
 **Last Updated:** October 2026
 
@@ -3242,7 +3242,7 @@ The Manual is the system's deep reference — architecture, design rationale, an
 7. [State System](#7-state-system) — states, state groups, transitions, offset states for mixes
 8. [Multi-Position Audio](#8-multi-position-audio) — synchronized playback across multiple positions
 9. [Performance & Optimization](#9-performance--optimization) — voice budgets, virtualization, LOD
-10. [Advanced Features](#10-advanced-features) — occlusion, ducking, crossfading, beat scheduling, and the sound tools: Audition, Live View and recording, Loop Analysis, Engine Builder, the validator, Engine Grains
+10. [Advanced Features](#10-advanced-features) — occlusion, ducking, crossfading, beat scheduling, and the sound tools: Audition, Live View and recording, Loop Analysis, Engine Builder, the validator, Engine Grains, Loop Sets
 11. [Best Practices](#11-best-practices) — recommended patterns for production projects
 12. [Troubleshooting](#12-troubleshooting) — common failure modes and diagnosis
 13. [Ambient Propagation Subsystem](#13-ambient-propagation-subsystem) — zone/portal graph routing for long-running beds
@@ -4970,20 +4970,65 @@ RTPC: "DistanceToPlayer"
 
 #### 4.7 Generated Engines (Unity 6.3 and later)
 
-An engine can be played from sweeps instead of loops: the **Granular Engine** cuts a recorded or synthesised sweep into
-engine cycles and plays them at the car's RPM, so a fast rev glides through every RPM with no band crossfade. The
-**Additive Engine** adds the engine's firing orders as sine tones, for weight. Both are containers whose sound is
-computed while they play (Unity 6.3's audio generators), on Pepper's voices like any other: buses, panning, Doppler,
-filters, pause, virtual voices and Blend nesting all apply. They are in the `SFXSystem.Generators` assemblies, which
-compile only on **Unity 6000.3 and later**; on earlier versions they don't exist, and the rest of Pepper is unchanged.
+Three engines are computed while they play (Unity 6.3's audio generators) instead of read from clips at a pitch. The
+**Loop Engine** plays the loop sets the Engine Builder makes without the pitch changing how big the car sounds. The
+**Granular Engine** cuts a recorded or synthesised sweep into engine cycles and plays them at the car's RPM, so a fast
+rev glides through every RPM with no band crossfade. The **Additive Engine** adds the engine's firing orders as sine
+tones, for weight. All three are containers on Pepper's voices like any other: buses, panning, Doppler, filters, pause,
+virtual voices and Blend nesting all apply. They are in the `SFXSystem.Generators` assemblies, which compile only on
+**Unity 6000.3 and later**; on earlier versions they don't exist, and the rest of Pepper is unchanged.
 
 **Which engine when:**
 - **A loop blend** (the engine recipe, §3; the Engine Builder, §10.8): steady character, predictable, every behaviour a
-  layer you control. Its weakness is fast revs, where each loop is stretched until its neighbour takes over.
+  layer you control, on any Unity. Its weaknesses: each loop is pitched by playing it faster or slower, so the car
+  sounds smaller above a loop's RPM and bigger below it, and fast revs, where each loop is stretched until its
+  neighbour takes over.
+- **A Loop Engine** (below): the same loops, played so the car keeps its size at every RPM, on one voice per car. The
+  first choice for loops on Unity 6.3 and later.
 - **A granular engine:** the best response and transitions, from two sweeps per car. Its weakness is a held RPM, which
   can sound frozen; it varies the grains to avoid that.
 - **Both, or either with an additive layer:** a Blend whose layers are the engines, each at full level. This is how
   most current racing games build theirs.
+
+##### The Loop Engine (since 3.1.2)
+
+A Blend pitches each loop with the AudioSource's pitch, which plays it faster or slower. The firing rate follows the
+RPM, which is right; so do the resonances of the exhaust, intake and body, which in a real car stay where they are.
+Above a loop's RPM the car sounds smaller and thinner, below it muddier and slower. The **Loop Engine** cuts each loop
+into pieces one bang long and lays the pieces closer together or further apart at the car's RPM, never resampling
+them (PSOLA, pitch-synchronous overlap-add): the bangs come faster or slower, and the ringing inside each piece, the
+car's resonance, doesn't change.
+
+**1. Build it** with the Engine Builder (§10.8): **Build As: Loop Engine** makes a **Loop Set** for each set of loops,
+cuts them, and makes the Loop Engine and its Persistent event. From a loop Blend you already have: **Create >
+PepperSFX > Settings > Loop Set (Unity 6.3+)**, fill it from the RPM Blend and press **Cut** (§10.11), then **Create >
+PepperSFX > Containers > Loop Engine (Unity 6.3+)**.
+
+**2. Its settings:**
+- **Rpm** and **Load**: the same parameters a loop blend reads. Without Load it plays on load only.
+- **On Load** and **Off Load**: the two Loop Sets, blended by load at equal power. With one set, put it in On Load.
+- **Crossfade Share** (0.5) and **Crossfade Shape** (Equal Power): each loop plays from halfway to its lower
+  neighbour's RPM to halfway to its upper one's and crossfades over this share of the gap, as the Engine Builder lays
+  out a Blend.
+
+**3. Play it** like any engine: one Persistent event with a Target Bus, posted on the car's Audio Emitter. The game
+writes RPM and load as it does for a loop blend; nothing in its code changes. Tune it in the **Audition** (§10.5).
+
+**What it does differently from a loop blend:**
+- **One voice per car,** not one per loop.
+- **Two loops in a crossfade bang together.** One clock paces a set's pieces (the louder loop's spacing at the car's
+  RPM), so the two don't comb-filter.
+- **A rev doesn't climb in steps.** The RPM moves smoothly from frame to frame, sample by sample; it is heard about a
+  frame and two audio buffers late (25–75 ms), as by the other generated engines.
+- **A pattern between firings is kept:** each loop's pieces play in order, so a V12's two banks still take turns.
+- Each piece is scaled so more firings a second don't make it louder; a loop is pitched at most 12 semitones either way,
+  as a Blend's Follow Range.
+
+It costs about 1.3% of a CPU core per car at the most it does (both sets, each in a crossfade), measured on the
+development PC without Burst; one set costs less. Not yet measured on a Steam Deck: measure it with `GeneratorCost`
+(below).
+
+##### The Granular Engine
 
 **1. Make the sweeps.** An **on-load sweep** is the engine climbing at full throttle, idle to redline; an **off-load
 sweep** is it falling with the throttle closed. Mono (or folded to mono), steady and slow enough to give at least 10
@@ -5046,11 +5091,15 @@ GeneratorCost.Measuring = false;
 
 **Good to know:**
 - A Grain Table keeps a reference to its sweep, not a copy: re-analyse after editing the sweep, and the next play
-  reads it again.
-- Below the sweeps' lowest RPM with no idle loop, and across a gap in the sweep, the nearest grain is stretched.
+  reads it again. A Loop Set keeps references to its loops' clips the same way: cut it again after changing a loop,
+  its clip or Pieces Per Repeat, or that loop plays nothing.
+- Below the sweeps' lowest RPM with no idle loop, and across a gap in the sweep, the nearest grain is stretched. Below
+  a Loop Set's lowest loop and above its highest, that loop is stretched, at most 12 semitones.
 - A Sequence container can't hold a generator (its entries are clips).
 - The Container Validator checks generator containers: nothing to play, no RPM parameter, a table with no grains, a
-  sweep that can't be read, an off-load sweep with no Load parameter, a silent additive layer.
+  sweep that can't be read, an off-load sweep with no Load parameter, a silent additive layer; for a Loop Engine, a
+  Loop Set with no loops, loops not cut for their clips, clips that can't be read, a cut the analysis flagged, two
+  loops at one RPM, and an off-load set with no Load parameter.
 
 ---
 
@@ -6689,6 +6738,8 @@ On a Regions Blend's Inspector, **Detect Root Values** measures each layer's cli
 
 With loops of one set only, the RPM Blend is the engine and there is no load Blend, so it sounds the same on and off the throttle; the window and its dialog say so. That suits a thin set for other cars; a player's car wants both sets. It never overwrites an asset. The two sets' crossfades fall at the same RPMs when their roots match; move one set's regions by hand to stagger them. Audition the event in §10.5.
 
+**Build As: Loop Engine** (Unity 6.3 and later, since 3.1.2) builds the same loops as a Loop Engine (§4.7) instead: a **Loop Set** per set of loops, cut once the clips are set to Decompress On Load (§10.11); one **Loop Engine** on the RPM parameter and, with both sets, the Load parameter, 3D, with the window's Crossfade Share and Attenuation; and the same Persistent event. With one set, its loops are the engine's On Load set and no Load parameter is made. A loop that couldn't be cut is named in the Console; open its Loop Set to see why.
+
 #### 10.9 The Container Validator and the other windows
 
 **Window > PepperSFX > Authoring > Container Validator** checks every container and event in the project:
@@ -6741,6 +6792,34 @@ With loops of one set only, the RPM Blend is the engine and there is no load Ble
      aren't whole engine cycles, and the engine would sound rough.
 5. **One Grain At** loops the grain nearest an RPM, unchanged and with no crossfade: a click at its seam is a cut in the
    wrong place.
+
+#### 10.11 Loop Sets (Unity 6.3 and later)
+
+A **Loop Set** holds a Loop Engine's loops (§4.7), each a clip and the RPM it was recorded at. The Engine Builder makes
+and cuts them (§10.8); to make one by hand, **Create > PepperSFX > Settings > Loop Set (Unity 6.3+)**. Its inspector:
+
+1. **Fill From RPM Blend:** drag an Engine Builder RPM Blend (an `_OnLoad` or `_OffLoad` one) in and press **Fill**:
+   each layer's clip, at its Root Value, sorted by RPM. Layers with no clip or no Root Value are skipped, and named.
+   Or press **Add Loop** and set clips and RPMs by hand. Each clip must be **Decompress On Load**; **Set Them To
+   Decompress On Load** fixes those that aren't (their compression is kept).
+2. **Pieces Per Repeat:** **1** suits most loops. **2** when alternate firings sound different (a V12's two banks
+   can): each firing gets its own piece, so their timing follows the RPM too. Try both on the car.
+3. **Cut.** Each loop is cut into pieces one bang long. How long comes from the loop's own sound (how often it
+   repeats, as Loop Analysis reads it), times Pieces Per Repeat; never from its name or a cylinder count, which a
+   library's loops don't always follow. Each piece is marked on its bang, in order round the loop; a loop that isn't a
+   whole number of firings keeps its longer gap at the seam. Undo takes a cut back.
+
+Under each loop, a line says how many pieces it has, at what rate, the steady difference between alternate firings
+(when there is one) and how evenly the pieces are spaced, or:
+
+- **Not cut yet**, or **Out of date** (cut for another clip or Pieces Per Repeat): press Cut, or it plays nothing.
+- **The marks wander:** the pieces are longer than the bangs are apart. Try 2 pieces per repeat.
+- **Every other piece has little or no bang of its own:** the pieces may be shorter than the bangs are apart, or the
+  in-between bang is very weak. Try 1.
+- **Can't be read:** the clip isn't Decompress On Load.
+
+Cut again after changing a loop, its clip or Pieces Per Repeat; a Loop Engine playing the set reads it again at its
+next play.
 6. Press **Save**. The table is made beside the sweep as `<sweep>_Grains.asset`, or, when **Grain Table** names one
    (it fills the window with that table's settings), that table is updated, with Undo. Re-analyse whenever the sweep
    changes.

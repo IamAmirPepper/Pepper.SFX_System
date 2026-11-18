@@ -2,7 +2,7 @@
 
 This is a heads-up for beta testers: things that may not work as intended in this build yet, and places where the guides are out of date. If you hit one of these, it's already known. If you hit something that isn't listed, please report it.
 
-**Version:** 3.1.1
+**Version:** 3.1.2
 Last updated: November 2026
 
 ---
@@ -142,7 +142,7 @@ Last updated: November 2026
 - **Proximity culling** can use the wrong range for events that play a Switch or Blend container, so a nearby player might not get the sound.
 - **Sound Builder (Advanced)** is brand new, so expect rough edges. The free version has Sound Builder (Simple).
 - **Engine Builder** is in the full version only. The free version keeps Loop Analysis and the Blend inspector's Detect Root Values, so you can still build an engine's tree by hand (User Guide §10.8).
-- **Generated engines** (Granular and Additive Engines, Manual §4.7, and the Engine Grains window) are in the full version only, and need Unity 6000.3 or later. They haven't been measured on a Steam Deck yet (about 0.4% of a core each on a desktop PC). Their grains are resampled with the simplest interpolation, which may dull very high harmonics. Grain tables cut by Engine Grains in 3.1.0-dev.10 or earlier from a sweep that rises or falls evenly in pitch (most synthesisers) were cut along a straight line, so their grains aren't whole engine cycles: analyse them again with **Curve: Even Pitch** (Manual §10.10). In 3.1.0-dev.11 and earlier a held RPM warbled once an engine cycle, worst at low RPM, and a rev climbed in uneven steps: both fixed after dev.11, with no need to cut the tables again. Since then a generated engine moves to each frame's RPM over the time that frame took, so it hears the RPM about a frame and two audio buffers late (25–75 ms).
+- **Generated engines** (Loop, Granular and Additive Engines, Manual §4.7, the Engine Grains window and Loop Sets) are in the full version only, and need Unity 6000.3 or later. They haven't been measured on a Steam Deck yet (on a desktop PC about 0.4% of a core each for the granular and additive engines, and up to 1.3% for a Loop Engine with both sets in a crossfade). Their grains are resampled with the simplest interpolation, which may dull very high harmonics. Grain tables cut by Engine Grains in 3.1.0-dev.10 or earlier from a sweep that rises or falls evenly in pitch (most synthesisers) were cut along a straight line, so their grains aren't whole engine cycles: analyse them again with **Curve: Even Pitch** (Manual §10.10). In 3.1.0-dev.11 and earlier a held RPM warbled once an engine cycle, worst at low RPM, and a rev climbed in uneven steps: both fixed after dev.11, with no need to cut the tables again. Since then a generated engine moves to each frame's RPM over the time that frame took, so it hears the RPM about a frame and two audio buffers late (25–75 ms).
 - **Audio Profiler.** "Est. CPU" is worked out from the voice count, not measured, and "Managed heap" is all of your game's managed memory, not just audio. Use Unity's Profiler for real audio figures.
 - **Example scripts** work with either input setting (old Input Manager, new Input System, or Both). The audio settings UI example (Example 08) needs the Unity UI package; without it, that one example is left out.
 - **Import Manager settings** live in an Audio Import Settings asset in your project, so an update keeps them. Without one, the code defaults apply.
